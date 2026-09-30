@@ -1,6 +1,6 @@
 # Solution Design — Trust Card Assistant with Feedback Loop (Idea 1 + Idea 7)
 
-> **Status:** Draft for team review. Builds on the analysis in [`docs/idea-workings`](../idea-workings/README.md).
+> **Status:** Original solution design written before the hackathon. The proof of concept in this repository implements a scoped-down version; see the [README](../README.md) for what is built.
 > Items marked `[ ]` are decision points.
 
 ---
