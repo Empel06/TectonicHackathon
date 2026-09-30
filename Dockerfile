@@ -6,9 +6,9 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
     TRUST_RUNTIME_DIR=/app/runtime \
     DEMO_MODE=true
 
-# Pinned dependencies first so code changes rebuild in seconds
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Every dependency pinned with a SHA-256 hash (requirements.lock): a tampered package fails the build
+COPY requirements.lock .
+RUN pip install --no-cache-dir --require-hashes -r requirements.lock
 
 COPY core/ core/
 COPY app/ app/

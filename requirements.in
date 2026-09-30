@@ -1,0 +1,4 @@
+# Direct dependencies. The fully pinned, hashed lockfile is requirements.lock (generated from this file).
+streamlit==1.64.0
+PyYAML==6.0.3
+pytest==9.1.1
