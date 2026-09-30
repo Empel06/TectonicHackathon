@@ -219,3 +219,64 @@ def resolve_task(task_id, action, user_id="an-peeters"):
 
 def reset():
     store.reset()
+
+
+# ---------- evidence & knowledge base (read-only views) ----------
+
+def document_details(doc_version_id):
+    """Everything needed to check one document version: metadata, owner, full text, feedback history."""
+    people = store.load_people()
+    doc = next(d for d in store.load_all_versions() if d["doc_version_id"] == doc_version_id)
+    active = {d["doc_version_id"]: d for d in active_docs()}
+    doc = dict(active.get(doc_version_id, doc))
+    owner = people.get(doc.get("owner") or "")
+    events = sorted(_feedback_for(doc_version_id, store.read_events("feedback")),
+                    key=lambda e: e["created_at"], reverse=True)
+    return {
+        **{k: doc.get(k) for k in ("id", "version", "title", "country", "cla", "topic", "authority",
+                                   "last_reviewed", "summary", "body", "likes")},
+        "doc_version_id": doc_version_id,
+        "status": _status(doc, active),
+        "owner": {"name": owner["name"], "team": owner["team"], "active": owner["active"]} if owner else None,
+        "reputation": rep_mod.reputation(events, doc.get("owner")),
+        "feedback": [{
+            "date": e["created_at"][:10],
+            "user": people.get(e["user_id"], {}).get("name", e["user_id"]),
+            "role": e.get("role"),
+            "reason": REASONS.get(e["reason_code"], e["reason_code"]),
+            "country": (e.get("context") or {}).get("country"),
+            "comment": e.get("comment"),
+        } for e in events],
+    }
+
+
+def _status(doc, active):
+    if doc["doc_version_id"] in active:
+        return "Live"
+    live = next((d for d in active.values() if d["id"] == doc["id"]), None)
+    if live and live["version"] > doc["version"]:
+        return "Superseded"
+    return "Draft"
+
+
+def knowledge_base():
+    """All document versions with their status, for the Knowledge base view."""
+    people = store.load_people()
+    active = {d["doc_version_id"]: d for d in active_docs()}
+    feedback = store.read_events("feedback")
+    rows = []
+    for d in store.load_all_versions():
+        doc = active.get(d["doc_version_id"], d)
+        owner = people.get(doc.get("owner") or "")
+        evs = _feedback_for(d["doc_version_id"], feedback)
+        rows.append({
+            "doc_version_id": d["doc_version_id"], "title": doc["title"], "version": doc["version"],
+            "status": _status(doc, active), "country": doc.get("country") or "Any",
+            "authority": (doc.get("authority") or "").replace("_", " ").capitalize(),
+            "owner": (owner["name"] + ("" if owner["active"] else " (left)")) if owner else "None",
+            "last_reviewed": str(doc.get("last_reviewed") or "Not yet"),
+            "reports": len(evs),
+        })
+    order = {"Live": 0, "Draft": 1, "Superseded": 2}
+    rows.sort(key=lambda r: (order[r["status"]], r["doc_version_id"]))
+    return rows

@@ -76,6 +76,9 @@ def consistency(top, others, context):
                  and d.get("claim") != top.get("claim")]
     if not conflicts:
         return sig("pass", "No conflicting sources")
+    if not _applies_to(top, context):
+        # a source for another country cannot overrule one that applies here
+        return sig("warn", f"'{conflicts[0]['title']}' applies to {context.get('country')} and says otherwise")
     top_rank = AUTHORITY_RANK.get(top.get("authority"), 0)
     stronger = [d for d in conflicts if AUTHORITY_RANK.get(d.get("authority"), 0) >= top_rank]
     if stronger:

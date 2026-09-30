@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY core/ core/
 COPY app/ app/
 COPY ui/ ui/
+COPY .streamlit/ .streamlit/
 COPY data/ data/
 COPY tests/ tests/
 
