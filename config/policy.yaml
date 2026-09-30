@@ -1,0 +1,27 @@
+# Trust policy. Every threshold the trust core uses lives here, versioned like code.
+# Changing it is a governance action: in production only the "approver" role may publish
+# a new version, after replaying the evaluation set against it.
+version: 1
+approved_by: Knowledge team (demo)
+approved_on: 2026-09-30
+
+freshness:
+  fresh_days: 365        # reviewed within this many days -> pass
+  stale_days: 540        # older than this -> fail; in between -> warning
+
+reputation:
+  prior_alpha: 2         # neutral prior: 2 imaginary positive votes...
+  prior_beta: 2          # ...and 2 imaginary negative votes
+  min_evidence: 3        # fewer weighted reports -> "not enough data"
+  pass_at: 0.70
+  warn_at: 0.40
+  role_weight: {consultant: 1, expert: 3, owner: 0}
+
+ranking:
+  penalty_per_wrong_country_flag: 0.10
+  max_penalty: 0.50      # feedback can demote a document, never hide it
+  metadata_mismatch_factor: 0.80   # other joint committee / category / expired
+  min_relevance: 0.30
+
+abuse:
+  max_feedback_per_user_per_hour: 20

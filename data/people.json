@@ -9,5 +9,6 @@
   {"id": "emp-03", "name": "Consultant 3", "role": "consultant", "team": "Service Desk", "topics": [], "active": true},
   {"id": "emp-04", "name": "Consultant 4", "role": "consultant", "team": "Service Desk", "topics": [], "active": true},
   {"id": "emp-05", "name": "Consultant 5", "role": "consultant", "team": "Service Desk", "topics": [], "active": true},
-  {"id": "emp-06", "name": "Consultant 6", "role": "consultant", "team": "Service Desk", "topics": [], "active": true}
+  {"id": "emp-06", "name": "Consultant 6", "role": "consultant", "team": "Service Desk", "topics": [], "active": true},
+  {"id": "admin", "name": "Knowledge Team Admin", "role": "admin", "team": "Knowledge Team", "topics": [], "active": true}
 ]

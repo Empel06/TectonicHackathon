@@ -11,8 +11,11 @@ See README.md "Contract" for the dict shapes.
 from collections import Counter
 from datetime import date
 
-from app import store
+from datetime import datetime, timedelta, timezone
+
+from app import auth, privacy, store
 from app.llm import compose_answer
+from core.policy import POLICY
 from core import reputation as rep_mod
 from core import quality, retrieval, trust
 
@@ -32,6 +35,24 @@ DOUBT = rep_mod.NEGATIVE | {"wrong_context"}
 
 def today():
     return date.today()
+
+
+class PermissionDenied(Exception):
+    """Raised when a user tries an action their role does not allow. Enforced here, not in the UI."""
+
+
+def login(username, password):
+    """Return the person id for valid credentials of an ACTIVE person, else None."""
+    person_id = auth.authenticate(username, password)
+    person = store.load_people().get(person_id or "")
+    return person_id if person and person["active"] else None
+
+
+def _role(user_id):
+    person = store.load_people().get(user_id)
+    if not person or not person["active"]:
+        raise PermissionDenied("Unknown or inactive user")
+    return person["role"]
 
 
 # ---------- documents & versions ----------
@@ -159,13 +180,19 @@ def _experts(level, hits, context, people):
 def add_feedback(answer_id, doc_version_id, user_id, reason_code, comment=None):
     if reason_code not in REASONS:
         raise ValueError(f"Unknown reason_code {reason_code}")
+    role = _role(user_id)
+    if reason_code.startswith("expert_") and role != "expert":
+        raise PermissionDenied("Only domain experts can confirm or reject an answer")
+    hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(timespec="seconds")
+    recent = [e for e in store.read_events("feedback") if e["user_id"] == user_id and e["created_at"] >= hour_ago]
+    if len(recent) >= POLICY["abuse"]["max_feedback_per_user_per_hour"]:
+        raise PermissionDenied("Feedback limit reached for this hour")
     answers = {e["id"]: e for e in store.read_events("answer")}
     context = answers.get(answer_id, {}).get("context", {})  # context comes from what the user saw
-    role = store.load_people().get(user_id, {}).get("role", "consultant")
     return store.append_event({
         "type": "feedback", "answer_id": answer_id, "doc_version_id": doc_version_id,
         "user_id": user_id, "role": role, "reason_code": reason_code,
-        "context": {"country": context.get("country")}, "comment": comment,
+        "context": {"country": context.get("country")}, "comment": privacy.redact(comment),
         "trust_policy_version": trust.POLICY_VERSION,
     })
 
@@ -223,7 +250,15 @@ def resolve_task(task_id, action, user_id="an-peeters", content=None):
 
     publish_new_version without content publishes the staged draft file; with content
     ({"title", "summary", "body"}) the owner's own text becomes the new live version.
+    Only the document's active owner, or the person the task was routed to, may resolve it.
     """
+    role = _role(user_id)
+    task = next((t for t in owner_tasks() if t["id"] == task_id), None)
+    if task is None:
+        raise ValueError(f"No task {task_id}")
+    people = store.load_people()
+    if role != "admin" and people[user_id]["name"] not in {task["routed_to"], task["owner"] if task["owner_active"] else None}:
+        raise PermissionDenied(f"Only {task['routed_to']} can resolve this task")
     if action == "publish_new_version":
         task = next(t for t in owner_tasks() if t["id"] == task_id)
         if content is None:
@@ -237,7 +272,9 @@ def resolve_task(task_id, action, user_id="an-peeters", content=None):
             owner = live.get("owner")
             if not owner or not people.get(owner, {}).get("active"):
                 owner = next((p["id"] for p in people.values() if p["name"] == task["routed_to"]), owner)
-            new_version = max(d["version"] for d in store.load_all_versions() if d["id"] == live["id"]) + 1
+            # the owner's text becomes the staged draft's version if one exists, else the next number
+            new_version = (int(task["next_version"].rsplit("@v", 1)[1]) if task["next_version"]
+                           else max(d["version"] for d in store.load_all_versions() if d["id"] == live["id"]) + 1)
             doc = {k: v for k, v in live.items() if k not in ("body", "doc_version_id")}
             doc["last_reviewed"] = str(doc.get("last_reviewed"))
             doc.update(version=new_version, published=True, owner=owner, last_reviewed=today().isoformat(),
@@ -267,8 +304,28 @@ def published_versions():
             for e in reversed(store.read_events("publish"))]
 
 
-def reset():
+def reset(user_id=None):
+    """Demo control: restores the seed. Restricted to the admin role in the UI's secured mode."""
+    if user_id is not None and _role(user_id) != "admin":
+        raise PermissionDenied("Only the admin can reset the demo")
     store.reset()
+
+
+def audit_log(limit=200):
+    """Who did what, newest first, plus whether the hash chain is intact."""
+    people = store.load_people()
+    ok, bad, total = store.verify_chain()
+    rows = []
+    for e in reversed(store.read_events()[-limit:]):
+        who = e.get("user_id") or e.get("by")
+        what = {"feedback": REASONS.get(e.get("reason_code"), e.get("reason_code")),
+                "answer": f"asked ({e.get('confidence') or 'baseline'})",
+                "publish": f"published {e.get('doc_version_id')}",
+                "resolution": f"resolved task: {e.get('action')}"}.get(e["type"], e["type"])
+        rows.append({"time": e["created_at"], "user": people.get(who, {}).get("name", who), "event": e["type"],
+                     "action": what, "document": e.get("doc_version_id") or e.get("task_id") or "",
+                     "hash": (e.get("hash") or "")[:12]})
+    return {"chain_ok": ok, "first_bad_index": bad, "total": total, "rows": rows}
 
 
 # ---------- evidence & knowledge base (read-only views) ----------

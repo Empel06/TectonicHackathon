@@ -10,6 +10,13 @@ The full design is in [`docs/solution-design.md`](docs/solution-design.md). All 
 docker compose up --build     # then open http://localhost:8501
 ```
 
+Sign in with a demo account (password `demo2026` for all): `sofie` (consultant), `eva-smit` (owner NL),
+`an-peeters` (owner BE), `mark-de-vries` (expert NL), `admin`. See [SECURITY.md](SECURITY.md) for the threat model.
+
+**No API key needed.** Everything runs locally: retrieval, trust scoring, feedback and the owner inbox. Answers
+are the cited source's own summary. Setting `ANTHROPIC_API_KEY` is only for a future step, where a language
+model would phrase the answer from the same sources; the trust verdict stays rule-based either way.
+
 Without compose: `docker build -t trust-card . && docker run --rm -p 8501:8501 trust-card`.
 Run the tests in the container with `docker run --rm trust-card python -m pytest -q`.
 Demo state lives inside the container, so a restart (or the **Reset** button) gives a clean demo.
@@ -25,7 +32,8 @@ pytest -q                     # tests, including the full demo flow
 
 ## Demo script (about 3 minutes)
 
-Before each run, click **Reset demo state** in the sidebar. Use customer **Van Dijk BV (NL)** and sign in as **Sofie (consultant)**.
+Sign in as `sofie` and click **Reset demo state** in the sidebar. Use customer **Van Dijk BV (NL)**.
+To publish (step 4), sign out and sign in as `eva-smit`. To confirm (step 5), sign in as `mark-de-vries`.
 
 1. **Ask** the prefilled question. On the left, the **existing system** confidently gives the *Belgian* rule: 40 wrong payslips.
 2. On the right, the **Trust Card** shows 🔴 **LOW: "Source is for BE, customer is NL"** and suggests who to ask. Switch the customer to Janssens NV (BE): the same doc gets **HIGH**.
@@ -33,7 +41,7 @@ Before each run, click **Reset demo state** in the sidebar. Use customer **Van D
    The Dutch note now ranks first, but it is still **LOW**: 21 months old, and its owner has left.
 4. Open **Owner inbox**. The Dutch note was routed to Eva Smit because its owner left. Click **Publish nl-13th-month@v2**.
    Ask again: **MEDIUM, "New version, published after 2 reports; not yet validated."**
-5. Sign in as **Mark de Vries (expert)**, ask, and click **Expert: confirm**. The card goes to **HIGH**.
+5. Sign in as **mark-de-vries (expert)**, ask, and click **Confirm as expert**. The card goes to **HIGH**.
    *Feedback may create doubt automatically, but only people can create certainty.*
 
 `tests/test_demo_flow.py` asserts exactly this script. If it passes, the demo works.
@@ -92,6 +100,8 @@ Owners write the corrected text in **Owner inbox → Write and publish a correct
 | `app/service.py` | **The contract** the UI calls: `ask`, `add_feedback`, `owner_tasks`, `resolve_task`, `reset` | C |
 | `app/store.py` | Docs loader and the append-only event log | C |
 | `app/llm.py` | Answer composer (template, with an optional hook for Claude) | C |
+| `app/auth.py`, `app/privacy.py` | Login (hashed passwords, lockout) and personal-data redaction | C |
+| `config/policy.yaml`, `core/policy.py` | Versioned trust policy: every threshold | A |
 | `ui/app.py` | Streamlit UI: side-by-side answers, Trust Card, feedback, owner inbox | B |
 | `tests/` | Unit tests for the core, plus the demo-flow test | all |
 
@@ -113,6 +123,18 @@ Owners write the corrected text in **Owner inbox → Write and publish a correct
 }
 ```
 In `baseline` mode, `confidence`, `signals` and `experts` are `null`.
+
+## Security and governance
+
+- **Login** with hashed passwords and a lockout; people who left the company are refused.
+- **Permissions enforced in the service layer**: only the routed owner publishes, only experts give expert verdicts.
+- **Rate limit** on feedback, and **personal data redacted** from comments before storage.
+- **Audit log tab**: a hash-chained event log that detects tampering. Try *Simulate tampering*.
+- **Trust policy tab**: every threshold comes from the versioned `config/policy.yaml`.
+- **Hardened container**: non-root user, read-only filesystem, no Linux capabilities, localhost-only port.
+- **Dutch and French questions** are mapped to the corpus vocabulary ("vakantiegeld", "eindejaarspremie", "salaire garanti").
+
+Details: [SECURITY.md](SECURITY.md).
 
 ## Key design decisions (PoC)
 

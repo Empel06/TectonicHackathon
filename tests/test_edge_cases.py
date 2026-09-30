@@ -118,3 +118,15 @@ def test_owner_written_version_records_where_it_was_published():
                          {"title": "t", "summary": "s", "body": "b"})
     d = service.document_details("be-holiday-pay@v2")
     assert d["source_system"] == "Trust Card owner inbox" and "An Peeters" in d["source_location"]
+
+
+def test_owner_text_replaces_the_staged_draft_as_the_same_version():
+    draft = service.draft_for("nl-13th-month@v1")  # the editor is pre-filled with this
+    service.resolve_task("nl-13th-month@v1", "publish_new_version", "eva-smit",
+                         {"title": draft["title"], "summary": "Owner's own summary. " + draft["summary"],
+                          "body": draft["body"]})
+    versions = [d for d in store.load_all_versions() if d["id"] == "nl-13th-month"]
+    assert sorted(d["doc_version_id"] for d in versions) == ["nl-13th-month@v1", "nl-13th-month@v2"]
+    r = ask("van-dijk", HERO)
+    assert r["sources"][0]["doc_version_id"] == "nl-13th-month@v2"
+    assert r["answer"].startswith("Owner's own summary.")

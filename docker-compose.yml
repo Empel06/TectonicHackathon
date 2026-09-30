@@ -6,6 +6,18 @@ services:
     image: trust-card
     container_name: tectonic-trust-card
     ports:
-      - "8501:8501"
+      - "127.0.0.1:8501:8501"      # only reachable from this machine
     environment:
+      - DEMO_MODE=${DEMO_MODE:-true}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    volumes:
+      - trust-runtime:/app/runtime # event log survives restarts; Reset restores the seed
+    read_only: true                # image filesystem is immutable at runtime
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  trust-runtime:

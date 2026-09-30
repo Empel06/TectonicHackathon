@@ -4,18 +4,20 @@ Pure functions: they take a list of feedback events and return numbers.
 See docs/solution-design.md section 6.
 """
 
-PRIOR_ALPHA = 2
-PRIOR_BETA = 2
-MIN_EVIDENCE = 3  # below this effective_n the Validation signal is "unknown"
-ROLE_WEIGHT = {"consultant": 1, "expert": 3, "owner": 0}
+from core.policy import POLICY
+
+PRIOR_ALPHA = POLICY["reputation"]["prior_alpha"]
+PRIOR_BETA = POLICY["reputation"]["prior_beta"]
+MIN_EVIDENCE = POLICY["reputation"]["min_evidence"]  # below this effective_n the Validation signal is "unknown"
+ROLE_WEIGHT = POLICY["reputation"]["role_weight"]
 
 POSITIVE = {"trusted_used", "expert_confirmed"}
 NEGATIVE = {"outdated", "incorrect", "incomplete", "contradicts_other_source", "expert_rejected"}
 # wrong_context is NOT a reputation hit: the document may be right for another country.
 # It only demotes the document for the context it was flagged in (context_penalty).
 
-PENALTY_PER_FLAG = 0.1
-MAX_PENALTY = 0.5
+PENALTY_PER_FLAG = POLICY["ranking"]["penalty_per_wrong_country_flag"]
+MAX_PENALTY = POLICY["ranking"]["max_penalty"]
 
 
 def _latest_vote_per_user(events):

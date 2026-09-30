@@ -3,6 +3,7 @@
 Only talks to app.service (the contract). Person B owns this file.
 """
 import html
+import os
 import sys
 from urllib.parse import quote
 from pathlib import Path
@@ -13,6 +14,7 @@ import streamlit as st  # noqa: E402
 
 from app import service, store  # noqa: E402
 
+DEMO_MODE = os.environ.get("DEMO_MODE", "true").lower() == "true"  # enables Reset + tamper demo for everyone
 HERO_QUESTION = "Do our part-time employees get a pro-rata end-of-year bonus (13th month) in December?"
 SIGNAL_LABEL = {"freshness": "Freshness", "ownership": "Ownership", "authority": "Authority",
                 "applicability": "Applicability", "consistency": "Consistency", "validation": "Validation"}
@@ -202,6 +204,49 @@ st.html(CSS)
 people = store.load_people()
 customers = store.load_customers()
 
+# ---------- login ----------
+def login_page():
+    _, mid, _ = st.columns([1, 1.2, 1])
+    with mid:
+        show("""<div style="margin-top:8vh"><div class="tc-eyebrow">Payroll knowledge · Proof of concept</div>
+             <div class="tc-title">Trust Card Assistant</div>
+             <div class="tc-section-sub">Sign in to continue. Passwords are stored as salted PBKDF2 hashes;
+             5 failed attempts lock the account for 5 minutes.</div></div>""")
+        with st.form("login"):
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+            if st.form_submit_button("Sign in", type="primary", width="stretch"):
+                person_id = service.login(username, password)
+                if person_id:
+                    st.session_state.clear()
+                    st.session_state["user_id"] = person_id
+                    st.rerun()
+                st.error("Invalid credentials, inactive account, or too many attempts.")
+        if DEMO_MODE:
+            with st.expander("Demo accounts (password for all: demo2026)"):
+                st.dataframe([{"Username": "sofie", "Role": "Consultant", "Use for": "Asking and reporting"},
+                              {"Username": "eva-smit", "Role": "Owner (NL)", "Use for": "Publishing the Dutch fix"},
+                              {"Username": "an-peeters", "Role": "Owner (BE)", "Use for": "Belgian documents"},
+                              {"Username": "mark-de-vries", "Role": "Expert (NL)", "Use for": "Confirming answers"},
+                              {"Username": "admin", "Role": "Admin", "Use for": "Reset, audit"},
+                              {"Username": "joost-bakker", "Role": "Left the company", "Use for": "Login is refused"}],
+                             hide_index=True, width="stretch")
+
+
+if "user_id" not in st.session_state:
+    login_page()
+    st.stop()
+
+
+def guarded(action, *args):
+    """Run a service action; show a permission error instead of crashing."""
+    try:
+        return action(*args)
+    except service.PermissionDenied as e:
+        st.session_state["error"] = str(e)
+        st.rerun()
+
+
 # ---------- scenario loading (must run before the sidebar widgets exist) ----------
 if (pending := st.session_state.pop("pending_scenario", None)) is not None:
     _, st.session_state["customer_sel"], st.session_state["question"] = SCENARIOS[pending]
@@ -211,8 +256,12 @@ if (pending := st.session_state.pop("pending_scenario", None)) is not None:
 # ---------- sidebar ----------
 with st.sidebar:
     show("**Workspace**")
-    user_id = st.selectbox("Signed in as", list(people), index=list(people).index("sofie"),
-                           format_func=lambda p: f"{people[p]['name']} · {people[p]['role'].capitalize()}")
+    user_id = st.session_state["user_id"]
+    show(f"<div class='tc-context' style='margin-bottom:12px'>Signed in as <b>{esc(people[user_id]['name'])}</b>"
+         f"<br>{esc(people[user_id]['role'].capitalize())} · {esc(people[user_id]['team'])}</div>")
+    if st.button("Sign out", width="stretch"):
+        st.session_state.clear()
+        st.rerun()
     customer_id = st.selectbox("Customer", list(customers), key="customer_sel",
                                format_func=lambda c: f"{customers[c]['name']} ({customers[c]['country']})")
     c = customers[customer_id]
@@ -220,10 +269,14 @@ with st.sidebar:
                f"{CATEGORY[c['employee_category']]} · {c['employees']} employees")
     st.divider()
     st.caption(f"Trust policy v{service.trust.POLICY_VERSION} · rule-based · all data synthetic")
-    if st.button("Reset demo state", width="stretch"):
-        service.reset()
-        st.session_state.clear()
-        st.rerun()
+    if DEMO_MODE or people[user_id]["role"] == "admin":
+        if st.button("Reset demo state", width="stretch"):
+            guarded(service.reset, None if DEMO_MODE else user_id)
+            st.session_state.clear()
+            st.session_state["user_id"] = user_id
+            st.rerun()
+    if DEMO_MODE:
+        st.caption("Demo mode: reset is open to everyone. In production DEMO_MODE=false restricts it to admins.")
 
 customer = customers[customer_id]
 context = {"country": customer["country"], "cla": customer["cla"],
@@ -241,6 +294,8 @@ show(
 
 if msg := st.session_state.pop("toast", None):
     st.toast(msg)
+if err := st.session_state.pop("error", None):
+    st.error(f"Not allowed: {err}")
 
 
 # ---------- state ----------
@@ -309,22 +364,22 @@ def render_feedback(r):
     st.write("")
     c1, c2, c3 = st.columns([1, 1.1, 1.9])
     if c1.button("Trust and use", type="primary", width="stretch"):
-        service.add_feedback(r["answer_id"], top["doc_version_id"], user_id, "trusted_used")
+        guarded(service.add_feedback, r["answer_id"], top["doc_version_id"], user_id, "trusted_used")
         mark_dirty("Recorded: trusted and used")
     with c2.popover("Report an issue", width="stretch"):
         reason = st.radio("What is wrong with source [1]?", REPORT_REASONS,
                           format_func=lambda c: service.REASONS[c], key="report-reason")
         comment = st.text_input("Comment (optional)", key="report-comment", max_chars=200)
         if st.button("Submit report", type="primary", width="stretch"):
-            service.add_feedback(r["answer_id"], top["doc_version_id"], user_id, reason, comment or None)
+            guarded(service.add_feedback, r["answer_id"], top["doc_version_id"], user_id, reason, comment or None)
             mark_dirty(f"Report recorded: {service.REASONS[reason]}")
     if role == "expert":
         e1, e2 = c3.columns(2)
         if e1.button("Confirm as expert", width="stretch"):
-            service.add_feedback(r["answer_id"], top["doc_version_id"], user_id, "expert_confirmed")
+            guarded(service.add_feedback, r["answer_id"], top["doc_version_id"], user_id, "expert_confirmed")
             mark_dirty("Expert confirmation recorded")
         if e2.button("Reject as expert", width="stretch"):
-            service.add_feedback(r["answer_id"], top["doc_version_id"], user_id, "expert_rejected")
+            guarded(service.add_feedback, r["answer_id"], top["doc_version_id"], user_id, "expert_rejected")
             mark_dirty("Expert rejection recorded")
 
 
@@ -436,7 +491,8 @@ if doc_param := st.query_params.get("doc"):
     st.stop()
 
 # ---------- pages ----------
-tab_ask, tab_owner, tab_kb = st.tabs(["Ask", "Owner inbox", "Knowledge base"])
+tab_ask, tab_owner, tab_kb, tab_audit, tab_policy = st.tabs(
+    ["Ask", "Owner inbox", "Knowledge base", "Audit log", "Trust policy"])
 
 if "question" not in st.session_state and st.query_params.get("demo"):
     st.session_state["question"] = HERO_QUESTION  # ?demo=1 opens straight on the hero question
@@ -504,7 +560,11 @@ with tab_owner:
                 <div class="tc-task-meta">{esc(t['doc_version_id'])} · Owner: {esc(owner)}{routing}
                   · {t['report_count']} report{'s' if t['report_count'] != 1 else ''}</div>
                 <div class="tc-reasons">{reasons}</div>{comments}""")
-            if t["status"] == "open":
+            may_resolve = people[user_id]["role"] == "admin" or people[user_id]["name"] in {
+                t["routed_to"], t["owner"] if t["owner_active"] else None}
+            if t["status"] == "open" and not may_resolve:
+                st.caption(f"Only {t['routed_to']} can publish or resolve this task. Sign in as them to act on it.")
+            elif t["status"] == "open":
                 with st.expander("Write and publish a corrected version"):
                     draft = service.draft_for(t["id"])
                     with st.form(f"publish-{t['id']}"):
@@ -514,17 +574,17 @@ with tab_owner:
                         st.caption(f"Publishes as {draft['next_version']}, reviewed today, owner "
                                    f"{t['routed_to'] if not t['owner_active'] else t['owner']}.")
                         if st.form_submit_button(f"Publish {draft['next_version']}", type="primary"):
-                            service.resolve_task(t["id"], "publish_new_version", user_id,
+                            guarded(service.resolve_task, t["id"], "publish_new_version", user_id,
                                                  {"title": title, "summary": summary, "body": body})
                             st.session_state["just_published"] = (draft["next_version"], t["id"])
                             mark_dirty(f"Published {draft['next_version']}")
                 c1, c2, _ = st.columns([1, 1, 2])
                 if c1.button("Confirm scope", key=f"confirm_scope-{t['id']}", width="stretch",
                              help="The document is correct as-is for its own country"):
-                    service.resolve_task(t["id"], "confirm_scope", user_id)
+                    guarded(service.resolve_task, t["id"], "confirm_scope", user_id)
                     mark_dirty("Task resolved: scope confirmed")
                 if c2.button("Reject feedback", key=f"reject-{t['id']}", width="stretch"):
-                    service.resolve_task(t["id"], "reject", user_id)
+                    guarded(service.resolve_task, t["id"], "reject", user_id)
                     mark_dirty("Task resolved: feedback rejected")
             else:
                 st.caption(f"Resolved: {(t['resolution'] or '').replace('_', ' ')}")
@@ -552,3 +612,28 @@ with tab_kb:
     d = service.document_details(pick)
     show(status_tag(d["status"]))
     render_document(d)
+
+with tab_audit:
+    audit = service.audit_log()
+    if audit["chain_ok"]:
+        show(f"<div class='tc-published'><b>Audit chain intact.</b> {audit['total']} events, each sealed with the "
+             "SHA-256 hash of the previous one. Editing, deleting or reordering any stored event breaks the chain.</div>")
+    else:
+        show(f"<div class='tc-quality'><b>Tampering detected at event #{audit['first_bad_index']}.</b> The stored log "
+             "no longer matches its hash chain. Every event from that point on is untrusted.</div>")
+    if DEMO_MODE and audit["chain_ok"] and st.button("Simulate tampering (demo)",
+                                                      help="Silently edits one stored event, as an insider editing the file would"):
+        service.store.simulate_tampering()
+        st.rerun()
+    st.dataframe([{"Time": r["time"], "User": r["user"], "Event": r["event"], "Action": r["action"],
+                   "Document": r["document"], "Hash": r["hash"]} for r in audit["rows"]],
+                 hide_index=True, width="stretch")
+
+with tab_policy:
+    pol = service.POLICY
+    show(f"""<div class='tc-section-sub'>Trust policy <b>v{pol['version']}</b> · approved by {esc(pol['approved_by'])}
+         on {esc(str(pol['approved_on']))}. Every threshold the trust core uses comes from
+         <code>config/policy.yaml</code>. Read-only here: a change is a new, approved policy version.</div>""")
+    rows = [{"Area": area, "Setting": key, "Value": str(value)}
+            for area, block in pol.items() if isinstance(block, dict) for key, value in block.items()]
+    st.dataframe(rows, hide_index=True, width="stretch")

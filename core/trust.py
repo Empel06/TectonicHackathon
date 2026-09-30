@@ -4,9 +4,14 @@ Pure functions. Every signal returns {"status": pass|warn|fail|unknown, "reason"
 """
 from datetime import date
 
-POLICY_VERSION = 1
-FRESH_DAYS = 365
-STALE_DAYS = 540
+from core.policy import POLICY
+
+POLICY_VERSION = POLICY["version"]
+FRESH_DAYS = POLICY["freshness"]["fresh_days"]
+STALE_DAYS = POLICY["freshness"]["stale_days"]
+PASS_AT = POLICY["reputation"]["pass_at"]
+WARN_AT = POLICY["reputation"]["warn_at"]
+MISMATCH = POLICY["ranking"]["metadata_mismatch_factor"]
 AUTHORITY_RANK = {"approved_procedure": 3, "note": 2, "chat": 1}
 # order decides which reason becomes the card headline: "wrong for this customer" beats "old"
 SIGNAL_ORDER = ["applicability", "authority", "freshness", "ownership", "consistency", "validation"]
@@ -118,13 +123,13 @@ def context_fit(doc, context, today=None):
     today = today or date.today()
     factor = 1.0
     if doc.get("cla") and context.get("cla") and doc["cla"] != context["cla"]:
-        factor *= 0.8
+        factor *= MISMATCH
     cat = doc.get("employee_category")
     if cat and context.get("employee_category") and cat != context["employee_category"]:
-        factor *= 0.8
+        factor *= MISMATCH
     until = _as_date(doc.get("valid_until"))
     if until and until < today:
-        factor *= 0.8
+        factor *= MISMATCH
     return factor
 
 
@@ -157,7 +162,8 @@ def consistency(top, others, context):
     return sig("pass", f"{len(conflicts)} lower-authority source(s) disagree (e.g. '{conflicts[0]['title']}'); superseded")
 
 
-def validation(rep, wrong_context_flags, context, previous_reports=0, min_evidence=3):
+def validation(rep, wrong_context_flags, context, previous_reports=0,
+               min_evidence=POLICY["reputation"]["min_evidence"]):
     """rep: output of core.reputation.reputation()."""
     country = context.get("country")
     if wrong_context_flags > 0:
@@ -166,9 +172,9 @@ def validation(rep, wrong_context_flags, context, previous_reports=0, min_eviden
         if previous_reports:
             return sig("unknown", f"New version, published after {previous_reports} report(s) on the old one; not yet validated")
         return sig("unknown", f"Not enough feedback yet ({rep['effective_n']:g} reports)")
-    if rep["value"] >= 0.70:
+    if rep["value"] >= PASS_AT:
         return sig("pass", f"Reputation {rep['value']:.2f} from {rep['effective_n']:g} weighted reports")
-    if rep["value"] >= 0.40:
+    if rep["value"] >= WARN_AT:
         return sig("warn", f"Reputation {rep['value']:.2f} from {rep['effective_n']:g} weighted reports")
     return sig("fail", f"Reputation {rep['value']:.2f} from {rep['effective_n']:g} weighted reports")
 

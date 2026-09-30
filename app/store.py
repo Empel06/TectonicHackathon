@@ -3,8 +3,9 @@
 Everything (answers, feedback, publishes, task resolutions) is an event, so reputation,
 tasks and active versions are recomputed from the log. reset() restores the seed.
 """
+import hashlib
 import json
-import shutil
+import os
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -14,7 +15,8 @@ import yaml
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 DOCS_DIR = DATA / "docs"
-EVENTS = DATA / "events.jsonl"
+# runtime state lives outside the image's data folder so the container can mount it as a volume
+EVENTS = Path(os.environ.get("TRUST_RUNTIME_DIR", DATA)) / "events.jsonl"
 SEED = DATA / "seed_events.jsonl"
 _lock = threading.Lock()
 
@@ -25,16 +27,15 @@ def load_all_versions():
     A version written in the owner inbox lives only in the event log (a 'publish' event carrying
     the full document), so Reset removes it again.
     """
-    versions = []
-    for e in read_events("publish"):
-        if e.get("doc"):
-            versions.append(dict(e["doc"]))
+    versions = [dict(e["doc"]) for e in read_events("publish") if e.get("doc")]
+    written = {v["doc_version_id"] for v in versions}  # owner text replaces a staged draft of the same version
     for path in sorted(DOCS_DIR.glob("*.md")):
         _, front, body = path.read_text().split("---", 2)
         doc = yaml.safe_load(front)
         doc["body"] = body.strip()
         doc["doc_version_id"] = f"{doc['id']}@v{doc['version']}"
-        versions.append(doc)
+        if doc["doc_version_id"] not in written:
+            versions.append(doc)
     return versions
 
 
@@ -46,9 +47,51 @@ def load_customers():
     return {c["id"]: c for c in json.loads((DATA / "customers.json").read_text())}
 
 
+GENESIS = "0" * 64
+
+
+def _chain_hash(prev_hash, event):
+    """Hash of the previous event + this event's content: editing any line breaks every hash after it."""
+    body = {k: v for k, v in event.items() if k not in ("hash", "prev_hash")}
+    return hashlib.sha256((prev_hash + json.dumps(body, sort_keys=True)).encode()).hexdigest()
+
+
 def reset():
+    """Restore the seeded history, re-chaining it so the audit log starts intact."""
+    prev, lines = GENESIS, []
+    for line in SEED.read_text().splitlines():
+        if line.strip():
+            event = json.loads(line)
+            event.setdefault("type", "feedback")
+            event["prev_hash"], event["hash"] = prev, _chain_hash(prev, event)
+            prev = event["hash"]
+            lines.append(json.dumps(event))
+    EVENTS.parent.mkdir(parents=True, exist_ok=True)
     with _lock:
-        shutil.copy(SEED, EVENTS)
+        EVENTS.write_text("\n".join(lines) + "\n")
+
+
+def verify_chain():
+    """Return (ok, index_of_first_bad_event or None, total)."""
+    if not EVENTS.exists():
+        reset()
+    prev = GENESIS
+    lines = [line for line in EVENTS.read_text().splitlines() if line.strip()]
+    for i, line in enumerate(lines):
+        event = json.loads(line)
+        if event.get("prev_hash") != prev or event.get("hash") != _chain_hash(prev, event):
+            return False, i, len(lines)
+        prev = event["hash"]
+    return True, None, len(lines)
+
+
+def simulate_tampering():
+    """Demo only: silently change one stored event, the way an insider editing the file would."""
+    lines = EVENTS.read_text().splitlines()
+    event = json.loads(lines[1])
+    event["reason_code"] = "trusted_used" if event.get("reason_code") != "trusted_used" else "incorrect"
+    lines[1] = json.dumps(event)
+    EVENTS.write_text("\n".join(lines) + "\n")
 
 
 def read_events(type_=None):
@@ -67,6 +110,10 @@ def append_event(event):
              "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), **event}
     if not EVENTS.exists():
         reset()
-    with _lock, EVENTS.open("a") as f:
-        f.write(json.dumps(event) + "\n")
+    with _lock:
+        lines = [line for line in EVENTS.read_text().splitlines() if line.strip()]
+        prev = json.loads(lines[-1]).get("hash", GENESIS) if lines else GENESIS
+        event["prev_hash"], event["hash"] = prev, _chain_hash(prev, event)
+        with EVENTS.open("a") as f:
+            f.write(json.dumps(event) + "\n")
     return event
