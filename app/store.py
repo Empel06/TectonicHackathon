@@ -20,8 +20,15 @@ _lock = threading.Lock()
 
 
 def load_all_versions():
-    """Every document version on disk, published or staged."""
+    """Every document version: files on disk (published or staged) plus versions owners wrote in the app.
+
+    A version written in the owner inbox lives only in the event log (a 'publish' event carrying
+    the full document), so Reset removes it again.
+    """
     versions = []
+    for e in read_events("publish"):
+        if e.get("doc"):
+            versions.append(dict(e["doc"]))
     for path in sorted(DOCS_DIR.glob("*.md")):
         _, front, body = path.read_text().split("---", 2)
         doc = yaml.safe_load(front)

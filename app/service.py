@@ -14,7 +14,7 @@ from datetime import date
 from app import store
 from app.llm import compose_answer
 from core import reputation as rep_mod
-from core import retrieval, trust
+from core import quality, retrieval, trust
 
 REASONS = {
     "trusted_used": "I trust this and will use it",
@@ -91,10 +91,12 @@ def ask(question, context, mode="trust", user_id="sofie"):
             "rep": rep_mod.reputation(evs, d.get("owner")),
             "flags": flags,
             "penalty": rep_mod.context_penalty(flags) if mode == "trust" else 0.0,
+            "fit": trust.context_fit(d, context, today()) if mode == "trust" else 1.0,
             "reasons": Counter(e["reason_code"] for e in evs if e["reason_code"] in DOUBT),
         }
 
-    hits = retrieval.rank(question, docs, {k: v["penalty"] for k, v in per_doc.items()})
+    # combined demotion: feedback penalty for this country x metadata fit (CLA, category, expiry)
+    hits = retrieval.rank(question, docs, {k: 1 - (1 - v["penalty"]) * v["fit"] for k, v in per_doc.items()})
     text, llm_status = compose_answer(question, context, hits)
 
     sources = []
@@ -104,7 +106,8 @@ def ask(question, context, mode="trust", user_id="sofie"):
         sources.append({
             "ref": i, "doc_id": d["id"], "doc_version_id": d["doc_version_id"], "version": d["version"],
             "title": d["title"], "country": d.get("country"), "authority": d.get("authority"),
-            "relevance": h["relevance"], "context_penalty": h["penalty"], "score": h["score"],
+            "relevance": h["relevance"], "context_penalty": info["penalty"], "fit": info["fit"],
+            "score": h["score"],
             "reputation": {**info["rep"], "summary": summary},
         })
 
@@ -205,16 +208,58 @@ def owner_tasks():
     return tasks
 
 
-def resolve_task(task_id, action, user_id="an-peeters"):
+def draft_for(task_id):
+    """Starting text for the owner's new version: the staged draft if one exists, else the live text."""
+    task = next(t for t in owner_tasks() if t["id"] == task_id)
+    versions = {d["doc_version_id"]: d for d in store.load_all_versions()}
+    base = versions.get(task["next_version"]) or next(d for d in active_docs() if d["doc_version_id"] == task_id)
+    return {"title": base["title"], "summary": base["summary"], "body": base["body"],
+            "next_version": task["next_version"] or f"{task['doc_id']}@v{int(task_id.rsplit('@v', 1)[1]) + 1}"}
+
+
+def resolve_task(task_id, action, user_id="an-peeters", content=None):
+    """action: publish_new_version | confirm_scope | reject.
+
+    publish_new_version without content publishes the staged draft file; with content
+    ({"title", "summary", "body"}) the owner's own text becomes the new live version.
+    """
     if action == "publish_new_version":
         task = next(t for t in owner_tasks() if t["id"] == task_id)
-        if not task["next_version"]:
-            raise ValueError("No staged new version for this document")
-        store.append_event({"type": "publish", "doc_version_id": task["next_version"],
-                            "published_on": today().isoformat(), "by": user_id})
+        if content is None:
+            if not task["next_version"]:
+                raise ValueError("No staged new version for this document")
+            store.append_event({"type": "publish", "doc_version_id": task["next_version"],
+                                "published_on": today().isoformat(), "by": user_id})
+        else:
+            live = next(d for d in active_docs() if d["doc_version_id"] == task_id)
+            people = store.load_people()
+            owner = live.get("owner")
+            if not owner or not people.get(owner, {}).get("active"):
+                owner = next((p["id"] for p in people.values() if p["name"] == task["routed_to"]), owner)
+            new_version = max(d["version"] for d in store.load_all_versions() if d["id"] == live["id"]) + 1
+            doc = {k: v for k, v in live.items() if k not in ("body", "doc_version_id")}
+            doc.update(version=new_version, published=True, owner=owner, last_reviewed=today().isoformat(),
+                       authority="approved_procedure", title=content["title"], summary=content["summary"],
+                       body=content["body"])
+            doc["doc_version_id"] = f"{doc['id']}@v{new_version}"
+            for k in ("valid_from", "valid_until"):
+                if doc.get(k) is not None:
+                    doc[k] = str(doc[k])
+            store.append_event({"type": "publish", "doc_version_id": doc["doc_version_id"],
+                                "published_on": today().isoformat(), "by": user_id, "doc": doc})
     elif action not in {"confirm_scope", "reject"}:
         raise ValueError(f"Unknown action {action}")
     return store.append_event({"type": "resolution", "task_id": task_id, "action": action, "by": user_id})
+
+
+def published_versions():
+    """Where published responses went: every publish event with its live status."""
+    active = {d["doc_version_id"] for d in active_docs()}
+    people = store.load_people()
+    return [{"doc_version_id": e["doc_version_id"], "published_on": e["published_on"],
+             "by": people.get(e.get("by"), {}).get("name", e.get("by")),
+             "written_in_app": bool(e.get("doc")), "live": e["doc_version_id"] in active}
+            for e in reversed(store.read_events("publish"))]
 
 
 def reset():
@@ -238,7 +283,12 @@ def document_details(doc_version_id):
         "doc_version_id": doc_version_id,
         "status": _status(doc, active),
         "owner": {"name": owner["name"], "team": owner["team"], "active": owner["active"]} if owner else None,
+        "owner_id": doc.get("owner"),
         "reputation": rep_mod.reputation(events, doc.get("owner")),
+        "valid_from": str(doc["valid_from"]) if doc.get("valid_from") else None,
+        "valid_until": str(doc["valid_until"]) if doc.get("valid_until") else None,
+        "employee_category": doc.get("employee_category"),
+        "quality_issues": quality.check(doc, people, today()),
         "feedback": [{
             "date": e["created_at"][:10],
             "user": people.get(e["user_id"], {}).get("name", e["user_id"]),
@@ -276,6 +326,7 @@ def knowledge_base():
             "owner": (owner["name"] + ("" if owner["active"] else " (left)")) if owner else "None",
             "last_reviewed": str(doc.get("last_reviewed") or "Not yet"),
             "reports": len(evs),
+            "quality_issues": len(quality.check(doc, people, today())),
         })
     order = {"Live": 0, "Draft": 1, "Superseded": 2}
     rows.sort(key=lambda r: (order[r["status"]], r["doc_version_id"]))

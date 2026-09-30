@@ -1,4 +1,6 @@
 [
-  {"id": "van-dijk", "name": "Van Dijk BV",  "country": "NL", "cla": null,    "employees": 40},
-  {"id": "janssens", "name": "Janssens NV",  "country": "BE", "cla": "PC200", "employees": 25}
+  {"id": "van-dijk", "name": "Van Dijk BV",       "country": "NL", "cla": null,    "employee_category": null,           "employees": 40},
+  {"id": "janssens", "name": "Janssens NV",       "country": "BE", "cla": "PC200", "employee_category": "white_collar", "employees": 25},
+  {"id": "maes",     "name": "Bouwbedrijf Maes",  "country": "BE", "cla": "PC124", "employee_category": "blue_collar",  "employees": 60},
+  {"id": "muller",   "name": "Müller GmbH",       "country": "DE", "cla": null,    "employee_category": null,           "employees": 120}
 ]

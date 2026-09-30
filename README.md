@@ -38,6 +38,33 @@ Before each run, click **Reset demo state** in the sidebar. Use customer **Van D
 
 `tests/test_demo_flow.py` asserts exactly this script. If it passes, the demo works.
 
+## Test scenarios (edge cases)
+
+Pick one from the **Scenario** dropdown on the Ask tab; it sets the customer and the question.
+
+| Scenario | Customer | Expected card | What it proves |
+|---|---|---|---|
+| Hero: Belgian rule for a Dutch customer | Van Dijk BV (NL) | LOW: source is for BE | Country applicability |
+| Same question, construction company | Bouwbedrijf Maes (BE, PC 124, blue-collar) | LOW: source is for PC200 | Joint-committee applicability |
+| 2025 telework allowance asked in 2026 | Janssens NV (BE, PC 200) | LOW: expired on 2025-12-31 | Validity period |
+| NL transition payment | Van Dijk BV | MEDIUM: contradicted by the 2018 procedure | Conflict detection between official sources |
+| 6% holiday allowance chat with 3 upvotes | Van Dijk BV | LOW: chat message | Popularity is not correctness (ceiling rule) |
+| Company car page with broken metadata | Janssens NV | LOW, plus 4 data-quality issues | Wrong data never produces confidence |
+| Sickness guaranteed salary | Janssens NV vs Bouwbedrijf Maes | Each gets its own category's document | Employee-category applicability |
+| Any question for a German customer | Müller GmbH (DE) | LOW: source is for BE | No coverage for a country |
+| Bicycle allowance | Janssens NV | UNKNOWN | No source at all: nothing is invented |
+
+`tests/test_edge_cases.py` asserts every row.
+
+## Where a published version goes
+
+Owners write the corrected text in **Owner inbox → Write and publish a corrected version**. Publishing appends a
+`publish` event, including the full document, to the event log. From that moment:
+- the new version is **live**: every new answer uses it, and it starts with fresh reputation;
+- the old version stays in the **Knowledge base** as **Superseded**, with its reports attached (audit trail);
+- the task is resolved, and the version appears under **Published versions** in the inbox;
+- **Reset demo state** removes it again, because it exists only in the event log.
+
 ## Code map
 
 | Path | What | Owner |
@@ -46,7 +73,8 @@ Before each run, click **Reset demo state** in the sidebar. Use customer **Van D
 | `data/seed_events.jsonl` | Seeded feedback history. `data/events.jsonl` is the live log (gitignored, recreated by Reset). | A |
 | `core/retrieval.py` | Deterministic keyword ranking with a per-context penalty | A |
 | `core/reputation.py` | Beta-Bernoulli reputation, `wrong_context` flags and penalty | A |
-| `core/trust.py` | Six signals plus confidence policy v1 | A |
+| `core/trust.py` | Six signals plus confidence policy v1 (applicability = country, validity dates, joint committee, employee category) | A |
+| `core/quality.py` | Data-quality checks on document metadata | A |
 | `app/service.py` | **The contract** the UI calls: `ask`, `add_feedback`, `owner_tasks`, `resolve_task`, `reset` | C |
 | `app/store.py` | Docs loader and the append-only event log | C |
 | `app/llm.py` | Answer composer (template, with an optional hook for Claude) | C |

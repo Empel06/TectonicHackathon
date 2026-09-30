@@ -15,7 +15,31 @@ from app import service, store  # noqa: E402
 HERO_QUESTION = "Do our part-time employees get a pro-rata end-of-year bonus (13th month) in December?"
 SIGNAL_LABEL = {"freshness": "Freshness", "ownership": "Ownership", "authority": "Authority",
                 "applicability": "Applicability", "consistency": "Consistency", "validation": "Validation"}
-STATUS_LABEL = {"pass": "Pass", "warn": "Warning", "fail": "Fail", "unknown": "Insufficient data"}
+STATUS_LABEL = {"pass": "Pass", "warn": "Warning", "fail": "Fail", "unknown": "No data"}
+SCENARIOS = [
+    ("Hero: wrong country (NL customer, Belgian rule)", "van-dijk", HERO_QUESTION),
+    ("Same question, Belgian PC 200 customer (should be HIGH)", "janssens", HERO_QUESTION),
+    ("Same question, construction customer PC 124 (wrong joint committee)", "maes", HERO_QUESTION),
+    ("Construction premium for a PC 124 customer (no feedback yet)", "maes",
+     "Who pays the year-end premium for construction workers?"),
+    ("Expired rule: 2025 telework allowance asked in 2026", "janssens",
+     "What is the maximum tax-free telework allowance?"),
+    ("Two procedures contradict each other (NL transition payment)", "van-dijk",
+     "Is a transition payment due on dismissal in the first year of service?"),
+    ("Popular but wrong chat: 6% holiday allowance with 3 upvotes", "van-dijk",
+     "How much holiday allowance (vakantiegeld) do Dutch employees get?"),
+    ("Broken metadata: company car page imported without owner or date", "janssens",
+     "How is the benefit in kind for a company car calculated?"),
+    ("White-collar customer: sickness guaranteed salary", "janssens",
+     "How long do we pay guaranteed salary during sickness?"),
+    ("Blue-collar customer: same question", "maes", "How long do we pay guaranteed salary during sickness?"),
+    ("Country without any documents (German customer)", "muller",
+     "How long do we pay guaranteed salary during sickness?"),
+    ("Outdated 2024 procedure (double holiday pay)", "janssens",
+     "How much double holiday pay do white-collar employees get?"),
+    ("No source exists at all (bicycle allowance)", "janssens", "Can employees get a bicycle allowance?"),
+]
+CATEGORY = {"white_collar": "White-collar", "blue_collar": "Blue-collar", None: "Any category"}
 REPORT_REASONS = ["wrong_context", "outdated", "contradicts_other_source", "incorrect", "incomplete", "unclear"]
 
 CSS = """
@@ -81,6 +105,11 @@ header[data-testid="stHeader"] { background: transparent; }
 .tc-meta .k { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:600; }
 .tc-meta .v { font-size:14px; color:var(--ink); margin-top:2px; }
 .tc-meta .v.bad { color:var(--fail); font-weight:600; }
+.tc-quality { font-size:13px; color:var(--warn); background:var(--warn-bg); border:1px solid #FDE68A;
+  border-radius:8px; padding:10px 14px; margin-top:12px; }
+.tc-quality ul { margin:6px 0 0 18px; padding:0; }
+.tc-published { font-size:13px; background:var(--pass-bg); border:1px solid #BBF7D0; color:var(--ink);
+  border-radius:8px; padding:10px 14px; margin-bottom:12px; }
 .tc-calc { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px; background:#F8FAFC;
   border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin:12px 0; color:var(--ink); }
 .tc-doc { font-size:14px; line-height:1.65; color:var(--ink); background:#FBFBFC; border:1px solid var(--line);
@@ -119,13 +148,22 @@ st.html(CSS)
 people = store.load_people()
 customers = store.load_customers()
 
+# ---------- scenario loading (must run before the sidebar widgets exist) ----------
+if (pending := st.session_state.pop("pending_scenario", None)) is not None:
+    _, st.session_state["customer_sel"], st.session_state["question"] = SCENARIOS[pending]
+    st.session_state["loaded_scenario"] = pending
+    st.session_state["dirty"] = True
+
 # ---------- sidebar ----------
 with st.sidebar:
     show("**Workspace**")
     user_id = st.selectbox("Signed in as", list(people), index=list(people).index("sofie"),
                            format_func=lambda p: f"{people[p]['name']} · {people[p]['role'].capitalize()}")
-    customer_id = st.selectbox("Customer", list(customers),
+    customer_id = st.selectbox("Customer", list(customers), key="customer_sel",
                                format_func=lambda c: f"{customers[c]['name']} ({customers[c]['country']})")
+    c = customers[customer_id]
+    st.caption(f"Country {c['country']} · Joint committee {c['cla'] or 'n/a'} · "
+               f"{CATEGORY[c['employee_category']]} · {c['employees']} employees")
     st.divider()
     st.caption(f"Trust policy v{service.trust.POLICY_VERSION} · rule-based · all data synthetic")
     if st.button("Reset demo state", width="stretch"):
@@ -134,7 +172,8 @@ with st.sidebar:
         st.rerun()
 
 customer = customers[customer_id]
-context = {"country": customer["country"], "cla": customer["cla"]}
+context = {"country": customer["country"], "cla": customer["cla"],
+           "employee_category": customer["employee_category"]}
 role = people[user_id]["role"]
 
 show(
@@ -236,7 +275,8 @@ def render_feedback(r):
 def render_document(d, source=None):
     """Full evidence for one document version: metadata, ranking maths, text, feedback history."""
     owner = d["owner"]
-    owner_txt = f"{owner['name']}{'' if owner['active'] else ' (left company)'}" if owner else "None"
+    owner_txt = (f"{owner['name']}{'' if owner['active'] else ' (left company)'}" if owner
+                 else f"{d['owner_id']} (not in directory)" if d.get("owner_id") else "None")
     owner_bad = "bad" if not owner or not owner["active"] else ""
     rep = d["reputation"]
     cells = [
@@ -245,16 +285,23 @@ def render_document(d, source=None):
         ("Last reviewed", d["last_reviewed"] or "Not yet"),
         ("Owner", owner_txt), ("Team", owner["team"] if owner else "None"),
         ("Reputation", f"{rep['value']:.2f}"), ("Weighted reports", f"{rep['effective_n']:g}"),
+        ("Employee category", CATEGORY.get(d["employee_category"], d["employee_category"])),
+        ("Valid from", d["valid_from"] or "Not set"), ("Valid until", d["valid_until"] or "Open-ended"),
+        ("Data issues", str(len(d["quality_issues"])) if d["quality_issues"] else "None"),
     ]
     meta = "".join(
-        f"<div><div class='k'>{k}</div><div class='v {owner_bad if k == 'Owner' else ''}'>{esc(v)}</div></div>"
+        f"<div><div class='k'>{k}</div><div class='v {owner_bad if k == 'Owner' else ('bad' if k == 'Data issues' and v != 'None' else '')}'>{esc(v)}</div></div>"
         for k, v in cells)
     show(f"<div class='tc-meta'>{meta}</div>")
+    if d["quality_issues"]:
+        items = "".join(f"<li>{esc(i)}</li>" for i in d["quality_issues"])
+        show(f"<div class='tc-quality'><b>Data quality issues</b> · this document cannot reach HIGH "
+             f"confidence until they are fixed<ul>{items}</ul></div>")
     if source:
-        pen = source["context_penalty"]
         show(
             f"""<div class="tc-calc">ranking score = relevance {source['relevance']:.2f}
-            × (1 − country penalty {pen:.2f}) = <b>{source['score']:.2f}</b></div>""")
+            × (1 − feedback penalty for {esc(context['country'])} {source['context_penalty']:.2f})
+            × metadata fit {source['fit']:.2f} = <b>{source['score']:.2f}</b></div>""")
     show("**Document text**")
     show(f"<div class='tc-doc'>{esc(d['body'])}</div>")
     show("**Feedback on this version**")
@@ -279,9 +326,15 @@ if "question" not in st.session_state and st.query_params.get("demo"):
     st.session_state["question"] = HERO_QUESTION  # ?demo=1 opens straight on the hero question
 
 with tab_ask:
+    pick = st.selectbox("Scenario", range(len(SCENARIOS)), index=None, placeholder="Load a test scenario (optional)",
+                        format_func=lambda i: SCENARIOS[i][0], label_visibility="collapsed", key="scenario")
+    if pick is not None and st.session_state.get("loaded_scenario") != pick:
+        st.session_state["pending_scenario"] = pick  # applied before the sidebar is drawn
+        st.rerun()
     with st.form("ask"):
         q_col, b_col = st.columns([6, 1])
         question = q_col.text_input("Question", value=st.session_state.get("question", HERO_QUESTION),
+                                    key=f"q-{st.session_state.get('loaded_scenario')}",
                                     label_visibility="collapsed", placeholder="Ask a payroll question")
         if b_col.form_submit_button("Ask", type="primary", width="stretch"):
             st.session_state["question"] = question
@@ -310,6 +363,10 @@ with tab_ask:
                 render_document(d, s)
 
 with tab_owner:
+    if jp := st.session_state.pop("just_published", None):
+        show(f"""<div class="tc-published"><b>{esc(jp[0])} is now live.</b> Every new answer uses it from now on.
+             The old version {esc(jp[1])} stays in the Knowledge base as Superseded, with its reports attached.
+             Ask the question again to see the new Trust Card.</div>""")
     tasks = service.owner_tasks()
     open_tasks = [t for t in tasks if t["status"] == "open"]
     show(
@@ -332,19 +389,38 @@ with tab_owner:
                   · {t['report_count']} report{'s' if t['report_count'] != 1 else ''}</div>
                 <div class="tc-reasons">{reasons}</div>{comments}""")
             if t["status"] == "open":
-                actions = []
-                if t["next_version"]:
-                    actions.append((f"Publish {t['next_version']}", "publish_new_version", "primary",
-                                    f"Published {t['next_version']}"))
-                actions += [("Confirm scope", "confirm_scope", "secondary", "Task resolved: scope confirmed"),
-                            ("Reject feedback", "reject", "secondary", "Task resolved: feedback rejected")]
-                cols = st.columns([1.3, 1, 1, 1.7])
-                for col, (label, action, kind, toast) in zip(cols, actions):
-                    if col.button(label, key=f"{action}-{t['id']}", type=kind, width="stretch"):
-                        service.resolve_task(t["id"], action, user_id)
-                        mark_dirty(toast)
+                with st.expander("Write and publish a corrected version"):
+                    draft = service.draft_for(t["id"])
+                    with st.form(f"publish-{t['id']}"):
+                        title = st.text_input("Title", draft["title"])
+                        summary = st.text_area("Summary (used as the answer)", draft["summary"], height=90)
+                        body = st.text_area("Full text", draft["body"], height=160)
+                        st.caption(f"Publishes as {draft['next_version']}, reviewed today, owner "
+                                   f"{t['routed_to'] if not t['owner_active'] else t['owner']}.")
+                        if st.form_submit_button(f"Publish {draft['next_version']}", type="primary"):
+                            service.resolve_task(t["id"], "publish_new_version", user_id,
+                                                 {"title": title, "summary": summary, "body": body})
+                            st.session_state["just_published"] = (draft["next_version"], t["id"])
+                            mark_dirty(f"Published {draft['next_version']}")
+                c1, c2, _ = st.columns([1, 1, 2])
+                if c1.button("Confirm scope", key=f"confirm_scope-{t['id']}", width="stretch",
+                             help="The document is correct as-is for its own country"):
+                    service.resolve_task(t["id"], "confirm_scope", user_id)
+                    mark_dirty("Task resolved: scope confirmed")
+                if c2.button("Reject feedback", key=f"reject-{t['id']}", width="stretch"):
+                    service.resolve_task(t["id"], "reject", user_id)
+                    mark_dirty("Task resolved: feedback rejected")
             else:
                 st.caption(f"Resolved: {(t['resolution'] or '').replace('_', ' ')}")
+
+    published = service.published_versions()
+    if published:
+        show("<div class='tc-section'>Published versions</div><div class='tc-section-sub'>Where published "
+             "responses go: each one becomes the live version used in answers.</div>")
+        st.dataframe([{"Version": p["doc_version_id"], "Published": p["published_on"], "By": p["by"],
+                       "Status": "Live" if p["live"] else "Superseded",
+                       "Source": "Written in the app" if p["written_in_app"] else "Staged draft"} for p in published],
+                     hide_index=True, width="stretch")
 
 with tab_kb:
     rows = service.knowledge_base()
@@ -353,7 +429,7 @@ with tab_kb:
     st.dataframe(
         [{"Document": r["title"], "Version": r["doc_version_id"], "Status": r["status"], "Country": r["country"],
           "Authority": r["authority"], "Owner": r["owner"], "Last reviewed": r["last_reviewed"],
-          "Reports": r["reports"]} for r in rows],
+          "Reports": r["reports"], "Data issues": r["quality_issues"]} for r in rows],
         hide_index=True, width="stretch")
     pick = st.selectbox("Open a document", [r["doc_version_id"] for r in rows],
                         format_func=lambda v: next(f"{r['title']} ({v})" for r in rows if r["doc_version_id"] == v))

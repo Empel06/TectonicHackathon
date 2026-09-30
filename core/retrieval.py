@@ -18,11 +18,19 @@ def tokens(text):
     return {w[:5] for w in words if w not in STOPWORDS and len(w) > 1}
 
 
+# words that appear in almost every payroll document: they count for relevance,
+# but a match on these alone is not enough to call a document relevant
+GENERIC = {"emplo", "worke", "staff", "payro", "custo", "salar", "allow"}
+MIN_SPECIFIC_MATCHES = 2
+
+
 def relevance(question, doc):
     q = tokens(question)
     if not q:
         return 0.0
     d = tokens(" ".join([doc.get("title", ""), doc.get("summary", ""), doc.get("body", "")]))
+    if len((q & d) - GENERIC) < MIN_SPECIFIC_MATCHES:
+        return 0.0
     return len(q & d) / len(q)
 
 
