@@ -1,0 +1,13 @@
+[
+  {"id": "an-peeters", "name": "An Peeters", "role": "owner", "team": "Belgian Payroll Team", "topics": ["BE"], "active": true},
+  {"id": "mark-de-vries", "name": "Mark de Vries", "role": "expert", "team": "Dutch Payroll Team", "topics": ["NL"], "active": true},
+  {"id": "eva-smit", "name": "Eva Smit", "role": "owner", "team": "Dutch Payroll Team", "topics": ["NL"], "active": true},
+  {"id": "joost-bakker", "name": "Joost Bakker", "role": "owner", "team": "Dutch Payroll Team", "topics": ["NL"], "active": false},
+  {"id": "sofie", "name": "Sofie Claes", "role": "consultant", "team": "Service Desk", "topics": [], "active": true},
+  {"id": "emp-01", "name": "Consultant 1", "role": "consultant", "team": "Service Desk", "topics": [], "active": true},
+  {"id": "emp-02", "name": "Consultant 2", "role": "consultant", "team": "Service Desk", "topics": [], "active": true},
+  {"id": "emp-03", "name": "Consultant 3", "role": "consultant", "team": "Service Desk", "topics": [], "active": true},
+  {"id": "emp-04", "name": "Consultant 4", "role": "consultant", "team": "Service Desk", "topics": [], "active": true},
+  {"id": "emp-05", "name": "Consultant 5", "role": "consultant", "team": "Service Desk", "topics": [], "active": true},
+  {"id": "emp-06", "name": "Consultant 6", "role": "consultant", "team": "Service Desk", "topics": [], "active": true}
+]

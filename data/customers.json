@@ -1,0 +1,4 @@
+[
+  {"id": "van-dijk", "name": "Van Dijk BV",  "country": "NL", "cla": null,    "employees": 40},
+  {"id": "janssens", "name": "Janssens NV",  "country": "BE", "cla": "PC200", "employees": 25}
+]
