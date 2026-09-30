@@ -13,7 +13,7 @@ from datetime import date
 
 from datetime import datetime, timedelta, timezone
 
-from app import auth, privacy, store
+from app import access, auth, privacy, store
 from app.llm import compose_answer
 from core.policy import POLICY
 from core import reputation as rep_mod
@@ -44,6 +44,17 @@ class PermissionDenied(Exception):
 def login(username, password):
     """Return the person id for valid credentials of an ACTIVE person, else None."""
     person_id = auth.authenticate(username, password)
+    person = store.load_people().get(person_id or "")
+    return person_id if person and person["active"] else None
+
+
+def link_token(user_id):
+    return auth.make_link_token(user_id)
+
+
+def login_from_link(token):
+    """Person id from a signed source-link token, if still valid and the person is active."""
+    person_id = auth.verify_link_token(token)
     person = store.load_people().get(person_id or "")
     return person_id if person and person["active"] else None
 
@@ -98,10 +109,19 @@ def _previous_reports(doc, feedback):
 
 # ---------- ask ----------
 
+def customers_for(user_id):
+    """The customers this user may work on (their portfolio)."""
+    customers = store.load_customers()
+    return access.portfolio(store.load_people().get(user_id), customers)
+
+
 def ask(question, context, mode="trust", user_id="sofie"):
     people = store.load_people()
     feedback = store.read_events("feedback")
-    docs = active_docs()
+    customers = store.load_customers()
+    person = people.get(user_id)
+    # access control BEFORE retrieval: quarantined sources and other customers' documents never reach ranking
+    docs = [d for d in active_docs() if access.can_use(d, person, customers, context.get("customer_id"))]
     country = context.get("country")
 
     per_doc = {}
@@ -321,7 +341,8 @@ def audit_log(limit=200):
         what = {"feedback": REASONS.get(e.get("reason_code"), e.get("reason_code")),
                 "answer": f"asked ({e.get('confidence') or 'baseline'})",
                 "publish": f"published {e.get('doc_version_id')}",
-                "resolution": f"resolved task: {e.get('action')}"}.get(e["type"], e["type"])
+                "resolution": f"resolved task: {e.get('action')}",
+                "access_denied": "ACCESS DENIED to source"}.get(e["type"], e["type"])
         rows.append({"time": e["created_at"], "user": people.get(who, {}).get("name", who), "event": e["type"],
                      "action": what, "document": e.get("doc_version_id") or e.get("task_id") or "",
                      "hash": (e.get("hash") or "")[:12]})
@@ -330,18 +351,30 @@ def audit_log(limit=200):
 
 # ---------- evidence & knowledge base (read-only views) ----------
 
-def document_details(doc_version_id):
-    """Everything needed to check one document version: metadata, owner, full text, feedback history."""
+def document_details(doc_version_id, user_id=None):
+    """Everything needed to check one document version: metadata, owner, full text, feedback history.
+
+    With user_id, access is checked (source pages, knowledge base); a refusal is logged.
+    """
     people = store.load_people()
     doc = next(d for d in store.load_all_versions() if d["doc_version_id"] == doc_version_id)
+    if user_id is not None and not access.can_view(doc, people.get(user_id), store.load_customers()):
+        store.append_event({"type": "access_denied", "user_id": user_id, "doc_version_id": doc_version_id})
+        raise PermissionDenied("This source is outside your access (other customer, or quarantined)")
     active = {d["doc_version_id"]: d for d in active_docs()}
     doc = dict(active.get(doc_version_id, doc))
     owner = people.get(doc.get("owner") or "")
     events = sorted(_feedback_for(doc_version_id, store.read_events("feedback")),
                     key=lambda e: e["created_at"], reverse=True)
+    found = access.personal_data_found(doc)
+    if found:  # only an admin gets here; show it masked
+        doc = {**doc, "summary": privacy.redact(doc.get("summary")), "body": privacy.redact(doc.get("body")),
+               "messages": [{**m, "text": privacy.redact(m.get("text"))} for m in doc.get("messages") or []]}
     return {
         **{k: doc.get(k) for k in ("id", "version", "title", "country", "cla", "topic", "authority",
-                                   "last_reviewed", "summary", "body", "likes")},
+                                   "last_reviewed", "summary", "body", "likes", "customer_id")},
+        "classification": doc.get("classification", "internal"),
+        "quarantine": found or (["marked restricted"] if doc.get("classification") == "restricted" else []),
         "doc_version_id": doc_version_id,
         "status": _status(doc, active),
         "owner": {"name": owner["name"], "team": owner["team"], "active": owner["active"]} if owner else None,
@@ -378,14 +411,18 @@ def _status(doc, active):
     return "Draft"
 
 
-def knowledge_base():
-    """All document versions with their status, for the Knowledge base view."""
+def knowledge_base(user_id=None):
+    """All document versions this user may see, with their status, for the Knowledge base view."""
     people = store.load_people()
+    customers = store.load_customers()
+    person = people.get(user_id) if user_id else None
     active = {d["doc_version_id"]: d for d in active_docs()}
     feedback = store.read_events("feedback")
     rows = []
     for d in store.load_all_versions():
         doc = active.get(d["doc_version_id"], d)
+        if person is not None and doc.get("customer_id") and not access.can_view(doc, person, customers):
+            continue  # other customers' documents are not even listed
         owner = people.get(doc.get("owner") or "")
         evs = _feedback_for(d["doc_version_id"], feedback)
         rows.append({
@@ -397,7 +434,13 @@ def knowledge_base():
             "last_reviewed": str(doc.get("last_reviewed") or "Not yet"),
             "reports": len(evs),
             "quality_issues": len(quality.check(doc, people, today())),
+            "classification": doc.get("classification", "internal"),
+            "customer": customers.get(doc.get("customer_id") or "", {}).get("name", ""),
         })
-    order = {"Live": 0, "Draft": 1, "Superseded": 2}
+    for r in rows:
+        doc = next(d for d in store.load_all_versions() if d["doc_version_id"] == r["doc_version_id"])
+        if access.quarantined(doc):
+            r["status"] = "Quarantined"
+    order = {"Live": 0, "Draft": 1, "Superseded": 2, "Quarantined": 3}
     rows.sort(key=lambda r: (order[r["status"]], r["doc_version_id"]))
     return rows

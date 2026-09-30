@@ -21,3 +21,8 @@ def redact(text):
     for label, pattern in PATTERNS:
         text = pattern.sub(label, text)
     return text
+
+
+def find_personal_data(text):
+    """Which kinds of personal data does this text contain? Used to quarantine sources at ingestion."""
+    return [label.strip("[]").replace(" removed", "") for label, pattern in PATTERNS if pattern.search(text or "")]

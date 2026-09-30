@@ -42,6 +42,8 @@ SCENARIOS = [
     ("Janssens NV · White-collar sickness guaranteed salary", "janssens",
      "How long do we pay guaranteed salary during sickness?"),
     ("Janssens NV · No source exists: bicycle allowance", "janssens", "Can employees get a bicycle allowance?"),
+    ("Janssens NV · Confidential customer file: who gets a company car", "janssens",
+     "Which functions are entitled to a company car and fuel card?"),
     ("Bouwbedrijf Maes · Belgian bonus rule, but customer is PC 124", "maes", HERO_QUESTION),
     ("Bouwbedrijf Maes · Who pays the year-end premium (sector fund)", "maes",
      "Who pays the year-end premium for construction workers?"),
@@ -60,6 +62,8 @@ SCENARIOS = [
      "What irregular hours allowance (ORT) applies to night shifts?"),
     ("Zorggroep Oost · Sick pay during long absence (NL, 104 weeks)", "zorggroep-oost",
      "How long does the employer pay salary during sickness?"),
+    ("Zorggroep Oost · Confidential local agreement (only for its own team)", "zorggroep-oost",
+     "Is there an extra night premium from the local agreement?"),
     ("Zorggroep Oost · Asked in Dutch: onregelmatigheidstoeslag", "zorggroep-oost",
      "Wat is de onregelmatigheidstoeslag voor nachtdiensten?"),
     ("Müller GmbH · German customer, no German sources", "muller",
@@ -193,7 +197,9 @@ def esc(value):
 
 
 def doc_url(doc_version_id):
-    return f"?doc={quote(doc_version_id)}"
+    """Source link with a signed, 15-minute token so the new tab stays signed in (access is still checked)."""
+    token = service.link_token(st.session_state["user_id"]) if "user_id" in st.session_state else ""
+    return f"?doc={quote(doc_version_id)}&s={quote(token)}"
 
 
 def doc_link(doc_version_id, label, cls="tc-link"):
@@ -259,6 +265,9 @@ def login_page():
                              hide_index=True, width="stretch")
 
 
+if "user_id" not in st.session_state and (token := st.query_params.get("s")):
+    if person_id := service.login_from_link(token):  # signed 15-minute link from a signed-in tab
+        st.session_state["user_id"] = person_id
 if "user_id" not in st.session_state:
     login_page()
     st.stop()
@@ -275,9 +284,14 @@ def guarded(action, *args):
 
 # ---------- scenario loading (must run before the sidebar widgets exist) ----------
 if (pending := st.session_state.pop("pending_scenario", None)) is not None:
-    _, st.session_state["customer_sel"], st.session_state["question"] = SCENARIOS[pending]
+    _, scenario_customer, scenario_question = SCENARIOS[pending]
+    if scenario_customer in service.customers_for(st.session_state["user_id"]):
+        st.session_state["customer_sel"], st.session_state["question"] = scenario_customer, scenario_question
+        st.session_state["dirty"] = True
+    else:
+        st.session_state["error"] = (f"{customers[scenario_customer]['name']} is not in your customer portfolio. "
+                                     "Sign in as someone who handles this customer.")
     st.session_state["loaded_scenario"] = pending
-    st.session_state["dirty"] = True
 
 # ---------- sidebar ----------
 with st.sidebar:
@@ -288,7 +302,10 @@ with st.sidebar:
     if st.button("Sign out", width="stretch"):
         st.session_state.clear()
         st.rerun()
-    customer_id = st.selectbox("Customer", list(customers), key="customer_sel",
+    my_customers = service.customers_for(user_id)
+    if st.session_state.get("customer_sel") not in my_customers:
+        st.session_state["customer_sel"] = my_customers[0] if my_customers else None
+    customer_id = st.selectbox("Customer (your portfolio)", my_customers, key="customer_sel",
                                format_func=lambda c: f"{customers[c]['name']} ({customers[c]['country']})")
     c = customers[customer_id]
     issues = "".join(f"<li>{esc(i)}</li>" for i in c.get("known_issues", []))
@@ -296,7 +313,9 @@ with st.sidebar:
          <b>{esc(c.get('sector', ''))}</b> · {c['employees']} employees<br>
          Country {esc(c['country'])} · {esc(c['cla'] or 'no joint committee / CAO')} · {esc(CATEGORY[c['employee_category']])}<br>
          <span style='color:var(--muted)'>{esc(c.get('profile', ''))}</span>
-         <div style='margin-top:6px'><b>Known questions</b><ul style='margin:2px 0 0 16px;padding:0'>{issues}</ul></div></div>""")
+         <div style='margin-top:6px'><b>Known questions</b><ul style='margin:2px 0 0 16px;padding:0'>{issues}</ul></div>
+         <div style='margin-top:6px;color:var(--muted)'>Customer context via the SD Worx connector: country,
+         joint committee, category and headcount only. No employee-level data is loaded.</div></div>""")
     st.divider()
     st.caption(f"Trust policy v{service.trust.POLICY_VERSION} · rule-based · all data synthetic")
     if DEMO_MODE or people[user_id]["role"] == "admin":
@@ -309,7 +328,7 @@ with st.sidebar:
         st.caption("Demo mode: reset is open to everyone. In production DEMO_MODE=false restricts it to admins.")
 
 customer = customers[customer_id]
-context = {"country": customer["country"], "cla": customer["cla"],
+context = {"customer_id": customer_id, "country": customer["country"], "cla": customer["cla"],
            "employee_category": customer["employee_category"]}
 role = people[user_id]["role"]
 
@@ -413,9 +432,19 @@ def render_feedback(r):
             mark_dirty("Expert rejection recorded")
 
 
+def class_tag(d):
+    cls = d.get("classification", "internal")
+    style = {"confidential": "superseded", "restricted": "draft"}.get(cls, "")
+    extra = f" · {esc(customers[d['customer_id']]['name'])} only" if d.get("customer_id") else ""
+    return f"<span class='tc-tag {style}'>{esc(cls.capitalize())}{extra}</span>"
+
+
 def render_origin(d):
     show(f"<div class='tc-origin'>{sys_badge(d['source_system'])}{esc(d['source_location'] or '')} · "
-         f"{doc_link(d['doc_version_id'], 'Open source document ↗')}</div>")
+         f"{doc_link(d['doc_version_id'], 'Open source document ↗')} {class_tag(d)}</div>")
+    if d.get("quarantine"):
+        show(f"<div class='tc-quality'><b>Quarantined:</b> contains personal data "
+             f"({esc(', '.join(d['quarantine']))}). Never used in answers; shown masked, to admins only.</div>")
 
 
 def render_content(d):
@@ -486,11 +515,16 @@ def status_tag(status):
 # ---------- source page: ?doc=<doc_version_id> ----------
 def render_source_page(doc_version_id):
     try:
-        d = service.document_details(doc_version_id)
+        d = service.document_details(doc_version_id, user_id)
     except StopIteration:
         st.error(f"Document {doc_version_id} not found.")
         return
-    show(f"<a class='tc-link' href='./' target='_self'>← Back to the assistant</a>")
+    except service.PermissionDenied:
+        show("<a class='tc-link' href='./' target='_self'>← Back to the assistant</a>")
+        st.error("Access denied. This source belongs to a customer outside your portfolio or contains personal "
+                 "data. The attempt has been recorded in the audit log.")
+        return
+    show(f"<a class='tc-link' href='./?s={quote(service.link_token(user_id))}' target='_self'>← Back to the assistant</a>")
     show(f"<div class='tc-origin' style='margin-top:14px'>{sys_badge(d['source_system'])}"
          f"{esc(d['source_location'] or '')}</div>")
     show(f"<div class='tc-title'>{esc(d['title'])}</div>")
@@ -558,7 +592,7 @@ with tab_ask:
                     "<div class='tc-section-sub'>Every document the answer relied on, how it was ranked "
                     "for this customer, and what colleagues reported about it.</div>")
         for s in trusted["sources"]:
-            d = service.document_details(s["doc_version_id"])
+            d = service.document_details(s["doc_version_id"], user_id)
             with st.expander(f"[{s['ref']}]  {s['title']}  ·  {s['doc_version_id']}  ·  score {s['score']:.2f}",
                              expanded=s["ref"] == 1):
                 show(status_tag(d["status"]) + f"<span class='tc-tag'>{esc(d['topic'])}</span>")
@@ -629,19 +663,24 @@ with tab_owner:
                      hide_index=True, width="stretch")
 
 with tab_kb:
-    rows = service.knowledge_base()
+    rows = service.knowledge_base(user_id)
     show("<div class='tc-section-sub'>All document versions, including drafts waiting to be "
                 "published and versions that were replaced.</div>")
     st.dataframe(
         [{"Document": r["title"], "Version": r["doc_version_id"], "Source": r["source_system"], "Status": r["status"], "Country": r["country"],
           "Authority": r["authority"], "Owner": r["owner"], "Last reviewed": r["last_reviewed"],
-          "Reports": r["reports"], "Data issues": r["quality_issues"]} for r in rows],
+          "Reports": r["reports"], "Data issues": r["quality_issues"],
+          "Classification": r["classification"], "Customer": r["customer"]} for r in rows],
         hide_index=True, width="stretch")
     pick = st.selectbox("Open a document", [r["doc_version_id"] for r in rows],
                         format_func=lambda v: next(f"{r['title']} ({v})" for r in rows if r["doc_version_id"] == v))
-    d = service.document_details(pick)
-    show(status_tag(d["status"]))
-    render_document(d)
+    try:
+        d = service.document_details(pick, user_id)
+        show(status_tag(d["status"]))
+        render_document(d)
+    except service.PermissionDenied:
+        st.error("Access denied: quarantined source (contains personal data). Admins can open it masked. "
+                 "The attempt has been recorded in the audit log.")
 
 with tab_audit:
     audit = service.audit_log()

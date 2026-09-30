@@ -156,7 +156,13 @@ In `baseline` mode, `confidence`, `signals` and `experts` are `null`.
 - **Hardened container**: non-root user, read-only filesystem, no Linux capabilities, localhost-only port.
 - **Dutch and French questions** are mapped to the corpus vocabulary ("vakantiegeld", "eindejaarspremie", "salaire garanti").
 
-Details: [SECURITY.md](SECURITY.md).
+- **Customer data separation**: consultants only see customers in their portfolio; confidential customer files
+  (e.g. Janssens NV's car policy) are used only for that customer and only by its team; direct links are checked too.
+- **Personal data quarantine**: a source containing a national number, IBAN, BSN, email or phone number is never
+  used in answers (demo: the Teams chat where an employee's details were pasted).
+- **Hashed lockfile** (`requirements.lock`, mirrored as `requirements.txt`) for dependency scanners such as Aikido.
+
+Details, including what SD Worx handles and how production access would work: [SECURITY.md](SECURITY.md).
 
 ## Key design decisions (PoC)
 
