@@ -85,6 +85,18 @@ tampered or substituted package fails the build. Regenerate with
 The CI workflow (`.github/workflows/tests.yml`) runs with read-only permissions, pins every action to a full commit
 SHA, and checks out with `persist-credentials: false`, so the `GITHUB_TOKEN` is not left available to later steps.
 
+## Scanner findings addressed (Aikido, 30 September 2026)
+
+| Finding | Fix |
+|---|---|
+| Hard-coded credentials (UI) | The demo password is no longer shown in the application; it is only in the README for judges |
+| Improper access control / cross-tenant bypass | `ask`, `document_details` and `knowledge_base` require an authenticated, active user; asking for a customer outside the user's portfolio is refused |
+| Uncontrolled resource consumption | Questions capped at 500 characters; comments at 500 |
+| Excessive authentication attempts | Per-account lockout plus a delay on every failed login |
+| Missing rate limiting | Feedback: 20 per user per hour; questions: 60 per user per minute (policy.yaml) |
+| Error messages | Generic messages; no user input or internals echoed |
+| Checkout credentials in CI | `persist-credentials: false`, actions pinned to commit SHAs |
+
 ## Demo mode
 
 `DEMO_MODE=true` (default in `docker-compose.yml`) shows the demo accounts on the login page, lets every user

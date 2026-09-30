@@ -19,7 +19,7 @@ def ctx(customer_id):
 
 
 def ask(customer_id, question):
-    return service.ask(question, ctx(customer_id))
+    return service.ask(question, ctx(customer_id), user_id="admin")
 
 
 HERO = "Do our part-time employees get a pro-rata end-of-year bonus (13th month) in December?"
@@ -50,7 +50,7 @@ def test_popular_chat_cannot_reach_high():
 def test_broken_metadata_never_gives_confidence():
     r = ask("janssens", "How is the benefit in kind for a company car calculated?")
     assert r["confidence"] == "LOW"
-    issues = service.document_details("be-company-car@v1")["quality_issues"]
+    issues = service.document_details("be-company-car@v1", "admin")["quality_issues"]
     assert any("ISO" in i for i in issues) and any("directory" in i for i in issues)
 
 
@@ -79,7 +79,7 @@ def test_owner_written_version_goes_live_and_old_one_is_superseded():
     r = ask("janssens", "How much double holiday pay do white-collar employees get?")
     assert r["sources"][0]["doc_version_id"] == "be-holiday-pay@v2"
     assert r["signals"]["freshness"]["status"] == "pass"
-    kb = {row["doc_version_id"]: row["status"] for row in service.knowledge_base()}
+    kb = {row["doc_version_id"]: row["status"] for row in service.knowledge_base("admin")}
     assert kb["be-holiday-pay@v1"] == "Superseded" and kb["be-holiday-pay@v2"] == "Live"
     assert service.published_versions()[0]["live"]
     store.reset()
@@ -105,7 +105,7 @@ def test_every_document_links_to_its_original_source():
 
 
 def test_chat_sources_keep_the_full_thread():
-    d = service.document_details("chat-nl-holiday-allowance@v1")
+    d = service.document_details("chat-nl-holiday-allowance@v1", "admin")
     assert d["source_system"] == "Teams" and len(d["messages"]) == 3
     assert any("8%" in m["text"] for m in d["messages"])  # the dissent is visible to the employee
 
@@ -118,7 +118,7 @@ def test_answer_sources_carry_their_origin():
 def test_owner_written_version_records_where_it_was_published():
     service.resolve_task("be-holiday-pay@v1", "publish_new_version", "an-peeters",
                          {"title": "t", "summary": "s", "body": "b"})
-    d = service.document_details("be-holiday-pay@v2")
+    d = service.document_details("be-holiday-pay@v2", "admin")
     assert d["source_system"] == "Trust Card owner inbox" and "An Peeters" in d["source_location"]
 
 
@@ -158,7 +158,7 @@ def test_announced_rule_does_not_contradict_the_current_one():
 
 
 def test_old_version_is_superseded_in_knowledge_base():
-    kb = {row["doc_version_id"]: row["status"] for row in service.knowledge_base()}
+    kb = {row["doc_version_id"]: row["status"] for row in service.knowledge_base("admin")}
     assert kb["nl-cao-vvt-ort@v1"] == "Superseded" and kb["nl-cao-vvt-ort@v2"] == "Live"
 
 

@@ -15,6 +15,7 @@ USERS_FILE = Path(__file__).resolve().parent.parent / "data" / "users.json"
 ITERATIONS = 200_000
 MAX_FAILURES = 5
 LOCKOUT_SECONDS = 300
+FAILED_LOGIN_DELAY = 0.5
 _failures = {}  # username -> (count, first_failure_time)
 
 
@@ -50,6 +51,7 @@ def authenticate(username, password):
         return user["person_id"]
     count, since = _failures.get(username, (0, time.time()))
     _failures[username] = (count + 1, since)
+    time.sleep(FAILED_LOGIN_DELAY)  # slows down guessing across many usernames too
     return None
 
 

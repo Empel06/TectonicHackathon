@@ -9,6 +9,7 @@ from app import auth, privacy, service, store
 @pytest.fixture(autouse=True)
 def fresh_state(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "EVENTS", tmp_path / "events.jsonl")
+    monkeypatch.setattr(auth, "FAILED_LOGIN_DELAY", 0)
     auth._failures.clear()
     store.reset()
 
@@ -40,7 +41,7 @@ def test_lockout_after_repeated_failures():
 
 
 def test_consultant_cannot_give_expert_verdict():
-    r = service.ask(Q, NL)
+    r = service.ask(Q, NL, user_id="sofie")
     with pytest.raises(service.PermissionDenied):
         service.add_feedback(r["answer_id"], "be-eoy-bonus@v1", "sofie", "expert_confirmed")
 
@@ -55,7 +56,7 @@ def test_only_the_routed_owner_can_publish():
 
 def test_feedback_is_rate_limited(monkeypatch):
     monkeypatch.setitem(service.POLICY["abuse"], "max_feedback_per_user_per_hour", 2)
-    r = service.ask(Q, NL)
+    r = service.ask(Q, NL, user_id="sofie")
     service.add_feedback(r["answer_id"], "be-eoy-bonus@v1", "sofie", "outdated")
     service.add_feedback(r["answer_id"], "nl-13th-month@v1", "sofie", "outdated")
     with pytest.raises(service.PermissionDenied):
@@ -63,7 +64,7 @@ def test_feedback_is_rate_limited(monkeypatch):
 
 
 def test_personal_data_is_redacted_before_storage():
-    r = service.ask(Q, NL)
+    r = service.ask(Q, NL, user_id="sofie")
     e = service.add_feedback(r["answer_id"], "be-eoy-bonus@v1", "sofie", "wrong_context",
                              "Employee 85.07.30-033.28, IBAN BE68 5390 0754 7034, jan@klant.be")
     stored = store.EVENTS.read_text()
@@ -76,7 +77,7 @@ def test_comment_length_is_capped():
 
 
 def test_audit_chain_detects_tampering():
-    service.ask(Q, NL)
+    service.ask(Q, NL, user_id="sofie")
     assert store.verify_chain()[0]
     store.simulate_tampering()
     ok, bad, _ = store.verify_chain()
@@ -89,3 +90,31 @@ def test_only_admin_can_reset_when_user_is_given():
     with pytest.raises(service.PermissionDenied):
         service.reset("sofie")
     service.reset("admin")
+
+
+def test_anonymous_or_unknown_users_get_nothing():
+    for user in (None, "", "nobody", "joost-bakker"):
+        with pytest.raises(service.PermissionDenied):
+            service.ask(Q, NL, user_id=user)
+        with pytest.raises(service.PermissionDenied):
+            service.document_details("be-eoy-bonus@v1", user)
+        with pytest.raises(service.PermissionDenied):
+            service.knowledge_base(user)
+
+
+def test_cannot_ask_for_a_customer_outside_the_portfolio():
+    with pytest.raises(service.PermissionDenied):
+        service.ask(Q, {"customer_id": "zorggroep-oost", "country": "NL", "cla": "CAO VVT"}, user_id="sofie")
+
+
+def test_question_length_is_bounded():
+    r = service.ask("bonus " * 1000, NL, user_id="sofie")
+    assert len(r["question"]) <= service.MAX_QUESTION
+
+
+def test_questions_are_rate_limited(monkeypatch):
+    monkeypatch.setitem(service.POLICY["abuse"], "max_questions_per_user_per_minute", 2)
+    service.ask(Q, NL, user_id="sofie")
+    service.ask(Q, NL, user_id="sofie")
+    with pytest.raises(service.PermissionDenied):
+        service.ask(Q, NL, user_id="sofie")

@@ -254,7 +254,7 @@ def login_page():
                     st.rerun()
                 st.error("Invalid credentials, inactive account, or too many attempts.")
         if DEMO_MODE:
-            with st.expander("Demo accounts (password for all: demo2026)"):
+            with st.expander("Demo accounts (the demo password is in the README)"):
                 st.dataframe([{"Username": "sofie", "Role": "Consultant", "Use for": "Asking and reporting"},
                               {"Username": "eva-smit", "Role": "Owner (NL)", "Use for": "Publishing the Dutch fix"},
                               {"Username": "an-peeters", "Role": "Owner (BE)", "Use for": "Belgian documents"},
@@ -356,8 +356,8 @@ def current_results():
         return None, None
     key = (st.session_state["question"], customer_id, user_id)
     if st.session_state.get("dirty") or st.session_state.get("key") != key:
-        st.session_state["baseline"] = service.ask(key[0], context, "baseline", user_id)
-        st.session_state["trusted"] = service.ask(key[0], context, "trust", user_id)
+        st.session_state["baseline"] = service.ask(key[0], context, "baseline", user_id=user_id)
+        st.session_state["trusted"] = service.ask(key[0], context, "trust", user_id=user_id)
         st.session_state["key"] = key
         st.session_state["dirty"] = False
     return st.session_state["baseline"], st.session_state["trusted"]
@@ -519,7 +519,7 @@ def render_source_page(doc_version_id):
     try:
         d = service.document_details(doc_version_id, user_id)
     except StopIteration:
-        st.error(f"Document {doc_version_id} not found.")
+        st.error("Document not found.")
         return
     except service.PermissionDenied:
         show("<a class='tc-link' href='./' target='_self'>← Back to the assistant</a>")

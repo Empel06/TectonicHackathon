@@ -35,8 +35,8 @@ def test_customer_document_is_used_for_that_customer_only():
 
 
 def test_customer_outside_portfolio_gets_nothing_from_its_confidential_file():
-    r = service.ask(NIGHT, ctx("zorggroep-oost"), user_id="sofie")
-    assert "cust-zorggroep-local-agreement@v1" not in [s["doc_version_id"] for s in r["sources"]]
+    with pytest.raises(service.PermissionDenied):  # not even an answer for a customer outside the portfolio
+        service.ask(NIGHT, ctx("zorggroep-oost"), user_id="sofie")
     r = service.ask(NIGHT, ctx("zorggroep-oost"), user_id="bram-janssen")
     assert r["sources"][0]["doc_version_id"] == "cust-zorggroep-local-agreement@v1"
 

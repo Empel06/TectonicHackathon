@@ -115,7 +115,28 @@ def customers_for(user_id):
     return access.portfolio(store.load_people().get(user_id), customers)
 
 
-def ask(question, context, mode="trust", user_id="sofie"):
+MAX_QUESTION = 500
+
+
+def _require_user(user_id):
+    person = store.load_people().get(user_id or "")
+    if not person or not person["active"]:
+        raise PermissionDenied("Sign-in required")
+    return person
+
+
+def ask(question, context, mode="trust", *, user_id):
+    """Answer a question for an authenticated user; the customer must be in that user's portfolio."""
+    _require_user(user_id)
+    if mode not in ("trust", "baseline"):
+        raise ValueError("mode must be 'trust' or 'baseline'")
+    question = (question or "")[:MAX_QUESTION]  # bound the work per request
+    minute_ago = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat(timespec="seconds")
+    recent = [e for e in store.read_events("answer") if e.get("user_id") == user_id and e["created_at"] >= minute_ago]
+    if len(recent) >= POLICY["abuse"]["max_questions_per_user_per_minute"]:
+        raise PermissionDenied("Too many questions, please wait a minute")
+    if context.get("customer_id") and context["customer_id"] not in customers_for(user_id):
+        raise PermissionDenied("Customer is not in your portfolio")
     people = store.load_people()
     feedback = store.read_events("feedback")
     customers = store.load_customers()
@@ -351,14 +372,15 @@ def audit_log(limit=200):
 
 # ---------- evidence & knowledge base (read-only views) ----------
 
-def document_details(doc_version_id, user_id=None):
+def document_details(doc_version_id, user_id):
     """Everything needed to check one document version: metadata, owner, full text, feedback history.
 
     With user_id, access is checked (source pages, knowledge base); a refusal is logged.
     """
     people = store.load_people()
     doc = next(d for d in store.load_all_versions() if d["doc_version_id"] == doc_version_id)
-    if user_id is not None and not access.can_view(doc, people.get(user_id), store.load_customers()):
+    _require_user(user_id)
+    if not access.can_view(doc, people.get(user_id), store.load_customers()):
         store.append_event({"type": "access_denied", "user_id": user_id, "doc_version_id": doc_version_id})
         raise PermissionDenied("This source is outside your access (other customer, or quarantined)")
     active = {d["doc_version_id"]: d for d in active_docs()}
@@ -411,17 +433,17 @@ def _status(doc, active):
     return "Draft"
 
 
-def knowledge_base(user_id=None):
+def knowledge_base(user_id):
     """All document versions this user may see, with their status, for the Knowledge base view."""
+    person = _require_user(user_id)
     people = store.load_people()
     customers = store.load_customers()
-    person = people.get(user_id) if user_id else None
     active = {d["doc_version_id"]: d for d in active_docs()}
     feedback = store.read_events("feedback")
     rows = []
     for d in store.load_all_versions():
         doc = active.get(d["doc_version_id"], d)
-        if person is not None and doc.get("customer_id") and not access.can_view(doc, person, customers):
+        if doc.get("customer_id") and not access.can_view(doc, person, customers):
             continue  # other customers' documents are not even listed
         owner = people.get(doc.get("owner") or "")
         evs = _feedback_for(d["doc_version_id"], feedback)

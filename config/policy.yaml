@@ -26,3 +26,4 @@ ranking:
 
 abuse:
   max_feedback_per_user_per_hour: 20
+  max_questions_per_user_per_minute: 60   # each question logs 2 answers (baseline + trust)

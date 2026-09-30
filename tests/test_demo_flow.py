@@ -15,25 +15,25 @@ def fresh_state(tmp_path, monkeypatch):
 
 
 def test_demo_flow():
-    base = service.ask(Q, NL, "baseline")
+    base = service.ask(Q, NL, "baseline", user_id="sofie")
     assert base["sources"][0]["doc_version_id"] == "be-eoy-bonus@v1"  # old system: confidently Belgian
     assert base["confidence"] is None
 
-    r = service.ask(Q, NL)
+    r = service.ask(Q, NL, user_id="sofie")
     assert r["confidence"] == "LOW"
     assert r["signals"]["applicability"]["status"] == "fail"
 
-    assert service.ask(Q, BE)["confidence"] == "HIGH"  # same doc is fine for a Belgian customer
+    assert service.ask(Q, BE, user_id="sofie")["confidence"] == "HIGH"  # same doc is fine for a Belgian customer
 
     service.add_feedback(r["answer_id"], "be-eoy-bonus@v1", "sofie", "wrong_context")
-    r = service.ask(Q, NL)
+    r = service.ask(Q, NL, user_id="sofie")
     assert r["sources"][0]["doc_version_id"] == "nl-13th-month@v1"  # one click flipped the ranking for NL
-    assert service.ask(Q, BE)["sources"][0]["doc_version_id"] == "be-eoy-bonus@v1"  # but not for BE
+    assert service.ask(Q, BE, user_id="sofie")["sources"][0]["doc_version_id"] == "be-eoy-bonus@v1"  # but not for BE
 
     service.resolve_task("nl-13th-month@v1", "publish_new_version", "eva-smit")
-    r = service.ask(Q, NL)
+    r = service.ask(Q, NL, user_id="sofie")
     assert r["sources"][0]["doc_version_id"] == "nl-13th-month@v2"
     assert r["confidence"] == "MEDIUM"
 
     service.add_feedback(r["answer_id"], "nl-13th-month@v2", "mark-de-vries", "expert_confirmed")
-    assert service.ask(Q, NL)["confidence"] == "HIGH"
+    assert service.ask(Q, NL, user_id="sofie")["confidence"] == "HIGH"
