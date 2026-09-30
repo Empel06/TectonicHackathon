@@ -1,7 +1,10 @@
+name: tectonic-hackathon
+
 services:
   trust-card:
     build: .
     image: trust-card
+    container_name: tectonic-trust-card
     ports:
       - "8501:8501"
     environment:
