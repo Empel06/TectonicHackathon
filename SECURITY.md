@@ -82,6 +82,9 @@ as Aikido) pins all 41 transitive packages with SHA-256 hashes. The container in
 tampered or substituted package fails the build. Regenerate with
 `pip-compile --generate-hashes --allow-unsafe --output-file requirements.lock requirements.in` on Python 3.12.
 
+The CI workflow (`.github/workflows/tests.yml`) runs with read-only permissions, pins every action to a full commit
+SHA, and checks out with `persist-credentials: false`, so the `GITHUB_TOKEN` is not left available to later steps.
+
 ## Demo mode
 
 `DEMO_MODE=true` (default in `docker-compose.yml`) shows the demo accounts on the login page, lets every user
