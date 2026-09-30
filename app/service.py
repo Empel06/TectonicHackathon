@@ -106,6 +106,7 @@ def ask(question, context, mode="trust", user_id="sofie"):
         sources.append({
             "ref": i, "doc_id": d["id"], "doc_version_id": d["doc_version_id"], "version": d["version"],
             "title": d["title"], "country": d.get("country"), "authority": d.get("authority"),
+            "source_system": d.get("source_system"), "source_location": d.get("source_location"),
             "relevance": h["relevance"], "context_penalty": info["penalty"], "fit": info["fit"],
             "score": h["score"],
             "reputation": {**info["rep"], "summary": summary},
@@ -238,9 +239,13 @@ def resolve_task(task_id, action, user_id="an-peeters", content=None):
                 owner = next((p["id"] for p in people.values() if p["name"] == task["routed_to"]), owner)
             new_version = max(d["version"] for d in store.load_all_versions() if d["id"] == live["id"]) + 1
             doc = {k: v for k, v in live.items() if k not in ("body", "doc_version_id")}
+            doc["last_reviewed"] = str(doc.get("last_reviewed"))
             doc.update(version=new_version, published=True, owner=owner, last_reviewed=today().isoformat(),
                        authority="approved_procedure", title=content["title"], summary=content["summary"],
-                       body=content["body"])
+                       body=content["body"], source_system="Trust Card owner inbox",
+                       source_location=f"Written and published by {people.get(user_id, {}).get('name', user_id)} "
+                                       f"in the owner inbox on {today().isoformat()}")
+            doc.pop("messages", None)
             doc["doc_version_id"] = f"{doc['id']}@v{new_version}"
             for k in ("valid_from", "valid_until"):
                 if doc.get(k) is not None:
@@ -284,6 +289,13 @@ def document_details(doc_version_id):
         "status": _status(doc, active),
         "owner": {"name": owner["name"], "team": owner["team"], "active": owner["active"]} if owner else None,
         "owner_id": doc.get("owner"),
+        "source_system": doc.get("source_system"),
+        "source_location": doc.get("source_location"),
+        "messages": [{**m, "time": str(m.get("time", ""))} for m in (doc.get("messages") or [])],
+        "versions": [{"doc_version_id": v["doc_version_id"], "version": v["version"],
+                      "status": _status(active.get(v["doc_version_id"], v), active)}
+                     for v in sorted((v for v in store.load_all_versions() if v["id"] == doc["id"]),
+                                     key=lambda v: -v["version"])],
         "reputation": rep_mod.reputation(events, doc.get("owner")),
         "valid_from": str(doc["valid_from"]) if doc.get("valid_from") else None,
         "valid_until": str(doc["valid_until"]) if doc.get("valid_until") else None,
@@ -321,6 +333,7 @@ def knowledge_base():
         evs = _feedback_for(d["doc_version_id"], feedback)
         rows.append({
             "doc_version_id": d["doc_version_id"], "title": doc["title"], "version": doc["version"],
+            "source_system": doc.get("source_system") or "Unknown",
             "status": _status(doc, active), "country": doc.get("country") or "Any",
             "authority": (doc.get("authority") or "").replace("_", " ").capitalize(),
             "owner": (owner["name"] + ("" if owner["active"] else " (left)")) if owner else "None",

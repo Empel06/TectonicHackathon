@@ -4,6 +4,7 @@ Only talks to app.service (the contract). Person B owns this file.
 """
 import html
 import sys
+from urllib.parse import quote
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -110,6 +111,30 @@ header[data-testid="stHeader"] { background: transparent; }
 .tc-quality ul { margin:6px 0 0 18px; padding:0; }
 .tc-published { font-size:13px; background:var(--pass-bg); border:1px solid #BBF7D0; color:var(--ink);
   border-radius:8px; padding:10px 14px; margin-bottom:12px; }
+a.tc-link { color:var(--accent); text-decoration:none; font-weight:500; }
+a.tc-link:hover { text-decoration:underline; }
+.tc-cite { color:var(--accent); font-weight:600; text-decoration:none; }
+.tc-sources-list { font-size:13px; margin-top:12px; color:var(--muted); line-height:1.8; }
+.tc-origin { font-size:13px; color:var(--muted); margin:6px 0 12px; }
+.tc-sys { display:inline-block; font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+  padding:2px 8px; border-radius:6px; background:#E0E7FF; color:var(--accent); margin-right:8px; }
+.tc-sys.teams { background:#EDE9FE; color:#5B21B6; } .tc-sys.confluence { background:#DBEAFE; color:#1D4ED8; }
+.tc-sys.legacy { background:var(--unknown-bg); color:var(--unknown); } .tc-sys.inbox { background:var(--pass-bg); color:var(--pass); }
+.tc-page { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:28px 32px; margin:12px 0; }
+.tc-page h2 { font-size:22px; margin:0 0 12px; color:var(--ink); }
+.tc-page .tc-summary { background:#F5F7FB; border-left:3px solid var(--accent); padding:10px 14px; border-radius:0 8px 8px 0;
+  font-size:14px; margin-bottom:16px; color:var(--ink); }
+.tc-page .tc-body { font-size:15px; line-height:1.7; color:var(--ink); white-space:pre-wrap; }
+.tc-chat { background:#F5F5FA; border:1px solid var(--line); border-radius:12px; padding:16px 18px; margin:12px 0; }
+.tc-chat-head { font-size:13px; font-weight:600; color:#5B21B6; margin-bottom:12px; }
+.tc-msg { display:flex; gap:12px; margin-bottom:14px; }
+.tc-avatar { width:32px; height:32px; border-radius:50%; background:#DDD6FE; color:#4C1D95; font-size:12px; font-weight:700;
+  display:flex; align-items:center; justify-content:center; flex:none; }
+.tc-bubble { background:var(--card); border:1px solid var(--line); border-radius:4px 12px 12px 12px; padding:8px 12px; max-width:640px; }
+.tc-bubble .who { font-size:12px; font-weight:600; color:var(--ink); } .tc-bubble .when { font-size:11px; color:var(--muted); margin-left:6px; font-weight:400; }
+.tc-bubble .txt { font-size:14px; color:var(--ink); margin-top:2px; }
+.tc-likes { display:inline-block; font-size:11px; font-weight:600; color:#5B21B6; background:#EDE9FE; border-radius:999px; padding:1px 8px; margin-top:6px; }
+.tc-notice { font-size:13px; background:var(--warn-bg); border:1px solid #FDE68A; border-radius:8px; padding:10px 14px; margin:8px 0; color:var(--ink); }
 .tc-calc { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px; background:#F8FAFC;
   border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin:12px 0; color:var(--ink); }
 .tc-doc { font-size:14px; line-height:1.65; color:var(--ink); background:#FBFBFC; border:1px solid var(--line);
@@ -140,6 +165,35 @@ def show(markup):
 
 def esc(value):
     return html.escape(str(value)) if value is not None else ""
+
+
+def doc_url(doc_version_id):
+    return f"?doc={quote(doc_version_id)}"
+
+
+def doc_link(doc_version_id, label, cls="tc-link"):
+    """Opens the exact version in a new tab, so the employee can check the source themselves."""
+    return f"<a class='{cls}' href='{doc_url(doc_version_id)}' target='_blank'>{esc(label)}</a>"
+
+
+def sys_badge(system):
+    cls = {"Teams": "teams", "Confluence": "confluence", "Legacy knowledge base": "legacy",
+           "Trust Card owner inbox": "inbox"}.get(system, "")
+    return f"<span class='tc-sys {cls}'>{esc(system or 'Unknown source')}</span>"
+
+
+def cited(answer, sources):
+    """Turn [1], [2] in the answer into links to the cited source."""
+    text = esc(answer)
+    for src in sources:
+        text = text.replace(f"[{src['ref']}]", doc_link(src["doc_version_id"], f"[{src['ref']}]", "tc-cite"))
+    return text
+
+
+def sources_list(sources):
+    items = "<br>".join(f"[{x['ref']}] {doc_link(x['doc_version_id'], x['title'] + ' ↗')} "
+                        f"<span>· {esc(x.get('source_system') or '')}</span>" for x in sources)
+    return f"<div class='tc-sources-list'>{items}</div>" if sources else ""
 
 
 st.set_page_config(page_title="Trust Card Assistant", layout="wide", initial_sidebar_state="expanded")
@@ -212,12 +266,13 @@ def mark_dirty(toast=None):
 
 # ---------- renderers ----------
 def render_baseline(r):
-    src = r["sources"][0]["title"] if r["sources"] else "No source found"
+    src = (doc_link(r["sources"][0]["doc_version_id"], r["sources"][0]["title"] + " ↗")
+           if r["sources"] else "No source found")
     show(
         f"""<div class="tc-card">
           <div class="tc-card-label">Existing system</div>
-          <div class="tc-answer">{esc(r['answer'])}</div>
-          <div class="tc-source-line">Source: {esc(src)}</div>
+          <div class="tc-answer">{cited(r['answer'], r['sources'])}</div>
+          <div class="tc-source-line">Source: {src}</div>
           <div class="tc-note">No information on freshness, ownership, country scope or validation.</div>
         </div>""")
 
@@ -240,7 +295,8 @@ def render_trust_card(r):
           <div class="tc-card-label">Trust Card Assistant</div>
           <div class="tc-verdict tc-{level}"><span class="tc-level">{level} CONFIDENCE</span>
             <span class="tc-reason">{esc(r['confidence_reason'])}</span></div>
-          <div class="tc-answer">{esc(r['answer'])}</div>
+          <div class="tc-answer">{cited(r['answer'], r['sources'])}</div>
+          {sources_list(r['sources'])}
           {contact}
           <div class="tc-signals">{tiles}</div>
         </div>""")
@@ -272,8 +328,30 @@ def render_feedback(r):
             mark_dirty("Expert rejection recorded")
 
 
-def render_document(d, source=None):
-    """Full evidence for one document version: metadata, ranking maths, text, feedback history."""
+def render_origin(d):
+    show(f"<div class='tc-origin'>{sys_badge(d['source_system'])}{esc(d['source_location'] or '')} · "
+         f"{doc_link(d['doc_version_id'], 'Open source document ↗')}</div>")
+
+
+def render_content(d):
+    """The source as the employee would see it in its original system."""
+    if d["messages"]:
+        msgs = "".join(
+            f"""<div class="tc-msg"><div class="tc-avatar">{esc(''.join(w[0] for w in m['author'].split()[:2]).upper())}</div>
+            <div class="tc-bubble"><div class="who">{esc(m['author'])}<span class="when">{esc(m['time'])}</span></div>
+            <div class="txt">{esc(m['text'])}</div>
+            {f"<span class='tc-likes'>{m['likes']} likes</span>" if m.get('likes') else ''}</div></div>"""
+            for m in d["messages"])
+        show(f"<div class='tc-chat'><div class='tc-chat-head'>{esc(d['source_location'])}</div>{msgs}</div>")
+    else:
+        show(f"""<div class="tc-page"><h2>{esc(d['title'])}</h2>
+             <div class="tc-summary"><b>Summary</b> · {esc(d['summary'])}</div>
+             <div class="tc-body">{esc(d['body'])}</div></div>""")
+
+
+def render_document(d, source=None, show_text=True):
+    """Full evidence for one document version: origin, metadata, ranking maths, text, feedback history."""
+    render_origin(d)
     owner = d["owner"]
     owner_txt = (f"{owner['name']}{'' if owner['active'] else ' (left company)'}" if owner
                  else f"{d['owner_id']} (not in directory)" if d.get("owner_id") else "None")
@@ -302,8 +380,9 @@ def render_document(d, source=None):
             f"""<div class="tc-calc">ranking score = relevance {source['relevance']:.2f}
             × (1 − feedback penalty for {esc(context['country'])} {source['context_penalty']:.2f})
             × metadata fit {source['fit']:.2f} = <b>{source['score']:.2f}</b></div>""")
-    show("**Document text**")
-    show(f"<div class='tc-doc'>{esc(d['body'])}</div>")
+    if show_text:
+        show("**Source content**")
+        render_content(d)
     show("**Feedback on this version**")
     if d["feedback"]:
         st.dataframe(
@@ -318,6 +397,43 @@ def render_document(d, source=None):
 def status_tag(status):
     return f"<span class='tc-tag {status.lower()}'>{status}</span>"
 
+
+# ---------- source page: ?doc=<doc_version_id> ----------
+def render_source_page(doc_version_id):
+    try:
+        d = service.document_details(doc_version_id)
+    except StopIteration:
+        st.error(f"Document {doc_version_id} not found.")
+        return
+    show(f"<a class='tc-link' href='./' target='_self'>← Back to the assistant</a>")
+    show(f"<div class='tc-origin' style='margin-top:14px'>{sys_badge(d['source_system'])}"
+         f"{esc(d['source_location'] or '')}</div>")
+    show(f"<div class='tc-title'>{esc(d['title'])}</div>")
+    show(status_tag(d["status"]) + f"<span class='tc-tag'>{esc(d['doc_version_id'])}</span>"
+         f"<span class='tc-tag'>{esc((d['authority'] or '').replace('_', ' '))}</span>")
+    live = next((v for v in d["versions"] if v["status"] == "Live"), None)
+    if d["status"] != "Live":
+        other = (f" The live version is {doc_link(live['doc_version_id'], live['doc_version_id'] + ' ↗')}."
+                 if live else "")
+        show(f"<div class='tc-notice'>You are viewing <b>{esc(d['doc_version_id'])}</b> ({d['status'].lower()})."
+             f" This is the exact version an earlier answer relied on.{other}</div>")
+    render_content(d)
+    raw = "\n".join([f"# {d['title']}", "", f"Source: {d['source_system']} · {d['source_location']}",
+                      f"Version: {d['doc_version_id']} ({d['status']})", "", d["summary"] or "", "", d["body"] or ""]
+                     + [f"{m['time']} {m['author']}: {m['text']}" for m in d["messages"]])
+    st.download_button("Download this version (.md)", raw, file_name=f"{d['doc_version_id']}.md")
+    show("<div class='tc-section'>Trust details</div>")
+    render_document(d, show_text=False)
+    if len(d["versions"]) > 1:
+        show("<div class='tc-section'>All versions</div>" + "<br>".join(
+            f"{doc_link(v['doc_version_id'], v['doc_version_id'] + ' ↗')} · {v['status']}" for v in d["versions"]))
+    st.caption("Synthetic proof-of-concept data. The location shows where this source would live; "
+               "in production this links straight to SharePoint, Confluence or the Teams message.")
+
+
+if doc_param := st.query_params.get("doc"):
+    render_source_page(doc_param)
+    st.stop()
 
 # ---------- pages ----------
 tab_ask, tab_owner, tab_kb = st.tabs(["Ask", "Owner inbox", "Knowledge base"])
@@ -384,7 +500,7 @@ with tab_owner:
             reasons = "".join(f"<span>{n} × {esc(r)}</span>" for r, n in t["reasons"].items())
             comments = "".join(f"<div class='tc-comment'>{esc(c)}</div>" for c in t["comments"])
             show(
-                f"""<div class="tc-task-title">{esc(t['title'])}</div>
+                f"""<div class="tc-task-title">{doc_link(t['doc_version_id'], t['title'] + ' ↗')}</div>
                 <div class="tc-task-meta">{esc(t['doc_version_id'])} · Owner: {esc(owner)}{routing}
                   · {t['report_count']} report{'s' if t['report_count'] != 1 else ''}</div>
                 <div class="tc-reasons">{reasons}</div>{comments}""")
@@ -427,7 +543,7 @@ with tab_kb:
     show("<div class='tc-section-sub'>All document versions, including drafts waiting to be "
                 "published and versions that were replaced.</div>")
     st.dataframe(
-        [{"Document": r["title"], "Version": r["doc_version_id"], "Status": r["status"], "Country": r["country"],
+        [{"Document": r["title"], "Version": r["doc_version_id"], "Source": r["source_system"], "Status": r["status"], "Country": r["country"],
           "Authority": r["authority"], "Owner": r["owner"], "Last reviewed": r["last_reviewed"],
           "Reports": r["reports"], "Data issues": r["quality_issues"]} for r in rows],
         hide_index=True, width="stretch")

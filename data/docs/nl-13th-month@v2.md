@@ -2,7 +2,7 @@
 id: nl-13th-month
 version: 2
 published: false
-title: "13th month / end-of-year bonus for part-time employees (NL)"
+title: 13th month / end-of-year bonus for part-time employees (NL)
 country: NL
 cla: null
 topic: end_of_year_bonus
@@ -10,7 +10,9 @@ authority: approved_procedure
 owner: eva-smit
 last_reviewed: null
 claim: depends_on_cao
-summary: "No statutory 13th month in the Netherlands. If the applicable CAO or contract grants an end-of-year bonus, part-time employees receive it pro rata (equal treatment rule). Always check the customer's CAO first."
+summary: No statutory 13th month in the Netherlands. If the applicable CAO or contract grants an end-of-year bonus, part-time employees receive it pro rata (equal treatment rule). Always check the customer's CAO first.
+source_system: SharePoint
+source_location: SharePoint › Payroll Netherlands › Procedures › 13th month and end-of-year bonus.docx
 ---
 Dutch procedure (replaces the 2025 note). Dutch law has no statutory 13th month or end-of-year
 bonus. Whether the customer's part-time employees are entitled depends on the applicable CAO or

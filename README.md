@@ -56,6 +56,20 @@ Pick one from the **Scenario** dropdown on the Ask tab; it sets the customer and
 
 `tests/test_edge_cases.py` asserts every row.
 
+## Checking the sources yourself
+
+Every source the assistant used can be opened, so an employee never has to take the card's word for it.
+- **Clickable citations:** `[1]` in the answer and every source title open that source in a new tab.
+- **Source page** (`?doc=<doc_version_id>`, for example `?doc=chat-nl-holiday-allowance%40v1`) shows:
+  - where the source lives (SharePoint, Confluence, Teams or the legacy knowledge base) and its path;
+  - the content as it looks in that system, with **Teams chats rendered as the full thread** (authors, times, likes, and replies such as the colleague who doubted the 6%);
+  - a **download** of that exact version;
+  - trust details, feedback history and all other versions.
+- **Exact versions:** links point to the version the answer used. A superseded version still opens, with a notice linking to the live one.
+- A document without a source location is flagged as a data-quality issue.
+
+The locations are synthetic. In production each link goes straight to the SharePoint file, Confluence page or Teams message.
+
 ## Where a published version goes
 
 Owners write the corrected text in **Owner inbox → Write and publish a corrected version**. Publishing appends a

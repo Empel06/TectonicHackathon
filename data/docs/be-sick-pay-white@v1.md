@@ -2,7 +2,7 @@
 id: be-sick-pay-white
 version: 1
 published: true
-title: "Guaranteed salary during sickness – white-collar employees (BE)"
+title: Guaranteed salary during sickness – white-collar employees (BE)
 country: BE
 cla: null
 employee_category: white_collar
@@ -11,7 +11,9 @@ authority: approved_procedure
 owner: an-peeters
 last_reviewed: 2026-07-01
 claim: guaranteed_white
-summary: "White-collar employees in Belgium receive their full salary from the employer for the first 30 days of sickness (guaranteed salary)."
+summary: White-collar employees in Belgium receive their full salary from the employer for the first 30 days of sickness (guaranteed salary).
+source_system: SharePoint
+source_location: SharePoint › Payroll Belgium › Procedures › Sickness › Guaranteed salary white-collar.docx
 ---
 Belgian procedure for white-collar employees. During the first 30 calendar days of incapacity the
 employer pays the guaranteed salary: the full normal salary for the first period.

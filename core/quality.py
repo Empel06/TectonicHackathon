@@ -30,6 +30,8 @@ def check(doc, people, today=None):
         issues.append("No review date")
     elif reviewed and date.fromisoformat(str(reviewed)) > today:
         issues.append("Review date is in the future")
+    if not doc.get("source_location"):
+        issues.append("No original source location: employees cannot check it themselves")
     vf, vu = doc.get("valid_from"), doc.get("valid_until")
     if vf and vu and str(vu) < str(vf):
         issues.append("valid_until is before valid_from")

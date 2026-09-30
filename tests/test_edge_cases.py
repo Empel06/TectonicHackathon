@@ -95,3 +95,26 @@ def test_quality_flags_future_review_and_bad_dates():
            "valid_from": "2026-01-01", "valid_until": "2025-01-01"}
     issues = quality.check(doc, {}, date(2026, 9, 30))
     assert "Review date is in the future" in issues and "valid_until is before valid_from" in issues
+
+
+def test_every_document_links_to_its_original_source():
+    for d in store.load_all_versions():
+        assert d.get("source_system") and d.get("source_location"), d["doc_version_id"]
+
+
+def test_chat_sources_keep_the_full_thread():
+    d = service.document_details("chat-nl-holiday-allowance@v1")
+    assert d["source_system"] == "Teams" and len(d["messages"]) == 3
+    assert any("8%" in m["text"] for m in d["messages"])  # the dissent is visible to the employee
+
+
+def test_answer_sources_carry_their_origin():
+    r = ask("van-dijk", HERO)
+    assert all(s["source_system"] for s in r["sources"])
+
+
+def test_owner_written_version_records_where_it_was_published():
+    service.resolve_task("be-holiday-pay@v1", "publish_new_version", "an-peeters",
+                         {"title": "t", "summary": "s", "body": "b"})
+    d = service.document_details("be-holiday-pay@v2")
+    assert d["source_system"] == "Trust Card owner inbox" and "An Peeters" in d["source_location"]
