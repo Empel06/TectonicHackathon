@@ -1,0 +1,8 @@
+services:
+  trust-card:
+    build: .
+    image: trust-card
+    ports:
+      - "8501:8501"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}

@@ -4,7 +4,17 @@ An assistant that tells payroll consultants not only **what** the answer is, but
 It gets more reliable every time someone expresses doubt.
 The full design is in [`docs/solution-design.md`](docs/solution-design.md). All data is **synthetic**.
 
-## Run it
+## Run it with Docker (one command)
+
+```bash
+docker compose up --build     # then open http://localhost:8501
+```
+
+Without compose: `docker build -t trust-card . && docker run --rm -p 8501:8501 trust-card`.
+Run the tests in the container with `docker run --rm trust-card python -m pytest -q`.
+Demo state lives inside the container, so a restart (or the **Reset** button) gives a clean demo.
+
+## Run it locally (for development)
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
