@@ -22,7 +22,9 @@ STATUS_LABEL = {"pass": "Pass", "warn": "Warning", "fail": "Fail", "unknown": "N
 SCENARIOS = [
     # (label, customer, question): grouped by demo company, each with its own typical problems
     ("Van Dijk BV · Hero: Belgian 13th-month rule for a Dutch customer", "van-dijk", HERO_QUESTION),
-    ("Van Dijk BV · Popular but wrong chat: 6% holiday allowance", "van-dijk",
+    ("Van Dijk BV · Popular but wrong chat: consultant checks the '6%' rule", "van-dijk",
+     "Is the Dutch holiday allowance 6% of gross salary, paid in June?"),
+    ("Van Dijk BV · Neutral holiday allowance question: official source wins", "van-dijk",
      "How much holiday allowance (vakantiegeld) do Dutch employees get?"),
     ("Van Dijk BV · Minimum youth wage for an 18-year-old (valid H2 2026 only)", "van-dijk",
      "What minimum youth wage applies to an 18-year-old?"),

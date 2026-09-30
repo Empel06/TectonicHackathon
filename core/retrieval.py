@@ -50,6 +50,8 @@ def normalize(question):
 
 
 STOPWORDS = {
+    # English question words: they say what kind of answer is wanted, not what it is about
+    "many", "much", "long", "when", "where", "why", "often", "does", "will", "would", "there", "my",
     # Dutch / French question words, so they do not dilute the match
     "krijgen", "onze", "een", "de", "het", "van", "voor", "hoeveel", "wat", "zijn", "moeten", "wij", "wie",
     "betalen", "hoe", "lang", "le", "la", "les", "des", "du", "nos", "est", "ce", "que", "qui", "combien",
@@ -60,10 +62,30 @@ STOPWORDS = {
 }
 
 
+# Irregular forms that suffix stripping cannot catch ("paid" must find "payment").
+IRREGULAR = {"paid": "pay", "pays": "pay", "payout": "pay", "uitbetaald": "pay", "betaald": "pay", "payé": "pay",
+             "got": "get", "gets": "get", "gotten": "get", "entitled": "entitle", "entitlement": "entitle",
+             "children": "child", "men": "man", "women": "woman", "sick": "sickness", "ill": "sickness",
+             "holidays": "holiday", "vacation": "holiday", "leave": "holiday"}
+SUFFIXES = ("ments", "ment", "ings", "ing", "ies", "ied", "ed", "es", "s")
+
+
+def stem(word):
+    """Light, deterministic stemming: irregular forms, common English suffixes, then a 5-letter prefix.
+
+    payment/payments/paying/paid -> "pay"; employee/employees/employment -> "emplo".
+    """
+    word = IRREGULAR.get(word, word)
+    for suffix in SUFFIXES:
+        if word.endswith(suffix) and len(word) - len(suffix) >= 3:
+            word = word[: -len(suffix)] + ("y" if suffix in ("ies", "ied") else "")
+            break
+    return word[:5]
+
+
 def tokens(text):
     words = re.findall(r"[a-z0-9]+", (text or "").lower())
-    # crude stemming: 5-char prefix makes employee/employees/employment match
-    return {w[:5] for w in words if w not in STOPWORDS and len(w) > 1}
+    return {stem(w) for w in words if w not in STOPWORDS and len(w) > 1}
 
 
 # words that appear in almost every payroll document: they count for relevance,
@@ -77,7 +99,9 @@ def relevance(question, doc):
     if not q:
         return 0.0
     d = tokens(" ".join([doc.get("title", ""), doc.get("summary", ""), doc.get("body", "")]))
-    if len((q & d) - GENERIC) < MIN_SPECIFIC_MATCHES:
+    # a short question ("bonus", "when is the bonus paid?") may match on fewer specific words
+    needed = min(MIN_SPECIFIC_MATCHES, len(q - GENERIC))
+    if needed == 0 or len((q & d) - GENERIC) < needed:
         return 0.0
     return len(q & d) / len(q)
 

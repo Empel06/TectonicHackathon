@@ -52,7 +52,7 @@ source's own summary, so nothing is invented.
    version**. Ask again: **MEDIUM**, new version, not yet validated.
 5. **Certainty from people.** Sign in as `mark-de-vries`, ask, and click **Confirm as expert**: **HIGH**.
 
-The **Scenario** dropdown holds 26 more prepared cases across six demo companies: expired rules, contradicting
+The **Scenario** dropdown holds 27 prepared cases across six demo companies: expired rules, contradicting
 procedures, popular-but-wrong chats, broken metadata, confidential customer files and more. See
 [docs/scenarios.md](docs/scenarios.md).
 
@@ -66,7 +66,7 @@ procedures, popular-but-wrong chats, broken metadata, confidential customer file
 | **Structured feedback** | One-click reasons (outdated, wrong country, contradicts, incorrect, incomplete, unclear) update reputation and per-country ranking immediately |
 | **Owner inbox** | Reports are routed to the document owner, or to a colleague if the owner has left. Owners write and publish a corrected version; the old one stays as *Superseded* |
 | **Knowledge base** | 30 synthetic sources with status, classification, data-quality issues and version history |
-| **Multilingual questions** | English, Dutch and French payroll terms ("vakantiegeld", "eindejaarspremie", "salaire garanti") |
+| **Free questions, no language model** | Any question in English, Dutch or French: payroll synonyms ("vakantiegeld", "eindejaarspremie", "salaire garanti"), light stemming ("paid" finds "payment") and a noise guard, so an unrelated question gives UNKNOWN instead of a guess |
 | **Audit log and trust policy** | Hash-chained, tamper-evident event log; every threshold in a versioned `config/policy.yaml` |
 
 ![Owner inbox with routed tasks and the version editor](docs/images/owner-inbox.png)
@@ -116,7 +116,7 @@ core/           Trust logic (pure functions) and policy loader
 ui/             Streamlit application
 config/         Versioned trust policy (policy.yaml)
 data/           Synthetic documents, people, customers, hashed demo accounts, seeded feedback
-tests/          58 tests: trust core, demo flow, edge cases, security, data access
+tests/          63 tests: trust core, demo flow, edge cases, security, data access
 docs/           Solution design, scenarios, screenshots
 ```
 
@@ -126,7 +126,7 @@ docs/           Solution design, scenarios, screenshots
 python3.12 -m venv .venv && source .venv/bin/activate   # the lockfile targets Python 3.12
 pip install --require-hashes -r requirements.lock
 streamlit run ui/app.py        # the app, with reload on save
-pytest -q                      # 58 tests; test_demo_flow.py replays the demo
+pytest -q                      # 63 tests; test_demo_flow.py replays the demo
 ```
 
 Tests also run in the container (`docker run --rm trust-card python -m pytest -q`) and on every push through GitHub Actions.

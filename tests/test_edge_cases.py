@@ -42,7 +42,7 @@ def test_contradicting_procedures_cap_at_medium():
 
 
 def test_popular_chat_cannot_reach_high():
-    r = ask("van-dijk", "How much holiday allowance (vakantiegeld) do Dutch employees get?")
+    r = ask("van-dijk", "Is the Dutch holiday allowance 6% of gross salary, paid in June?")
     assert r["sources"][0]["reputation"]["positive"] == 3  # upvoted...
     assert r["confidence"] == "LOW"                         # ...but still a chat message
 
@@ -73,7 +73,9 @@ def test_no_source_is_unknown():
 
 def test_owner_written_version_goes_live_and_old_one_is_superseded():
     service.resolve_task("be-holiday-pay@v1", "publish_new_version", "an-peeters",
-                         {"title": "Double holiday pay (BE) 2026", "summary": "Updated 2026 rule.", "body": "Text."})
+                         {"title": "Double holiday pay for white-collar employees (BE) 2026",
+                          "summary": "White-collar employees receive double holiday pay in May or June (2026 rule).",
+                          "body": "Belgian procedure, 2026 edition, for white-collar employees."})
     r = ask("janssens", "How much double holiday pay do white-collar employees get?")
     assert r["sources"][0]["doc_version_id"] == "be-holiday-pay@v2"
     assert r["signals"]["freshness"]["status"] == "pass"
@@ -144,7 +146,7 @@ def test_owner_text_replaces_the_staged_draft_as_the_same_version():
     ("zorggroep-oost", "How long does the employer pay salary during sickness?", "HIGH", "nl-sickness-104-weeks@v1"),
     ("van-dijk", "What minimum youth wage applies to an 18-year-old?", "MEDIUM", "nl-minimum-youth-wage@v1"),
 ])
-def test_demo_company_cases(customer, question, level, top):
+def test_demo_company_cases(customer, question, level, top):  # noqa: D103
     r = ask(customer, question)
     assert (r["confidence"], r["sources"][0]["doc_version_id"]) == (level, top)
 
@@ -158,3 +160,23 @@ def test_announced_rule_does_not_contradict_the_current_one():
 def test_old_version_is_superseded_in_knowledge_base():
     kb = {row["doc_version_id"]: row["status"] for row in service.knowledge_base()}
     assert kb["nl-cao-vvt-ort@v1"] == "Superseded" and kb["nl-cao-vvt-ort@v2"] == "Live"
+
+
+
+@pytest.mark.parametrize("question, top", [
+    ("When is the bonus paid?", "be-eoy-bonus@v1"),        # "paid" matches "payment"
+    ("bonus", "be-eoy-bonus@v1"),                          # one-word question
+    ("How many days of sick pay?", "be-sick-pay-white@v1"),  # own country wins a near-tie
+])
+def test_better_matching_for_free_questions(question, top):
+    assert ask("janssens", question)["sources"][0]["doc_version_id"] == top
+
+
+def test_unrelated_short_question_still_finds_nothing():
+    assert ask("janssens", "Mag ik mijn hond meenemen naar kantoor?")["confidence"] == "UNKNOWN"
+
+
+
+def test_neutral_question_prefers_the_official_source_over_the_popular_chat():
+    r = ask("van-dijk", "How much holiday allowance (vakantiegeld) do Dutch employees get?")
+    assert r["sources"][0]["doc_version_id"] == "nl-holiday-allowance@v1"

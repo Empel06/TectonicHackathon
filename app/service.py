@@ -437,9 +437,9 @@ def knowledge_base(user_id=None):
             "classification": doc.get("classification", "internal"),
             "customer": customers.get(doc.get("customer_id") or "", {}).get("name", ""),
         })
+    all_versions = {d["doc_version_id"]: d for d in store.load_all_versions()}
     for r in rows:
-        doc = next(d for d in store.load_all_versions() if d["doc_version_id"] == r["doc_version_id"])
-        if access.quarantined(doc):
+        if access.quarantined(all_versions[r["doc_version_id"]]):
             r["status"] = "Quarantined"
     order = {"Live": 0, "Draft": 1, "Superseded": 2, "Quarantined": 3}
     rows.sort(key=lambda r: (order[r["status"]], r["doc_version_id"]))

@@ -6,12 +6,12 @@ but have not been verified by a payroll expert.
 ## Demo companies and their problems
 
 Each customer has a sector, a profile and its own typical questions (shown in the sidebar). The **Scenario**
-dropdown on the Ask tab groups 26 prepared cases by company; any other question can be typed freely, in English,
+dropdown on the Ask tab groups 27 prepared cases by company; any other question can be typed freely, in English,
 Dutch or French.
 
 | Company | Profile | Typical questions and what the card shows |
 |---|---|---|
-| Van Dijk BV (NL, retail, 40) | Part-timers, students | 13th month (LOW: Belgian source) · holiday allowance (LOW: popular chat) · youth minimum wage (MEDIUM: valid H2 2026 only) · transition payment (MEDIUM: contradiction) |
+| Van Dijk BV (NL, retail, 40) | Part-timers, students | 13th month (LOW: Belgian source) · holiday allowance: the official source wins a neutral question; checking the chat's "6%" claim gives LOW · youth minimum wage (MEDIUM: valid H2 2026 only) · transition payment (MEDIUM: contradiction) |
 | Janssens NV (BE, PC 200, IT, white-collar, 25) | Company cars, home working | Meal vouchers (HIGH, expert-validated) · eco-cheques (MEDIUM, new) · telework (LOW: expired) · company car (LOW: broken metadata) · bicycle (UNKNOWN) |
 | Bouwbedrijf Maes (BE, PC 124, construction, blue-collar, 60) | Site workers, sector fund | Year-end premium (paid by the fund) · mobility allowance (HIGH) · bad weather (LOW: stale, reported incomplete) · Belgian PC 200 bonus rule (LOW: wrong joint committee) |
 | Brasserie De Kaai (BE, PC 302, hospitality, 18) | Flexi-jobs, students, tips | Flexi-job (HIGH) · student hours (MEDIUM: 2026 rule; the 2027 announcement and an outdated chat do not override it) · tips (LOW: 2024 note, owner left) |

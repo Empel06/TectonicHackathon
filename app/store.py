@@ -3,6 +3,7 @@
 Everything (answers, feedback, publishes, task resolutions) is an event, so reputation,
 tasks and active versions are recomputed from the log. reset() restores the seed.
 """
+import functools
 import hashlib
 import json
 import os
@@ -29,14 +30,22 @@ def load_all_versions():
     """
     versions = [dict(e["doc"]) for e in read_events("publish") if e.get("doc")]
     written = {v["doc_version_id"] for v in versions}  # owner text replaces a staged draft of the same version
-    for path in sorted(DOCS_DIR.glob("*.md")):
-        _, front, body = path.read_text().split("---", 2)
+    signature = tuple((p.name, p.stat().st_mtime_ns) for p in sorted(DOCS_DIR.glob("*.md")))
+    versions += [dict(d) for d in _parse_files(signature) if d["doc_version_id"] not in written]
+    return versions
+
+
+@functools.lru_cache(maxsize=4)
+def _parse_files(signature):
+    """Parse the document files once; the cache key changes when any file is added, removed or edited."""
+    docs = []
+    for name, _ in signature:
+        _, front, body = (DOCS_DIR / name).read_text().split("---", 2)
         doc = yaml.safe_load(front)
         doc["body"] = body.strip()
         doc["doc_version_id"] = f"{doc['id']}@v{doc['version']}"
-        if doc["doc_version_id"] not in written:
-            versions.append(doc)
-    return versions
+        docs.append(doc)
+    return tuple(docs)
 
 
 def load_people():

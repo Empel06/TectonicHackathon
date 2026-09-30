@@ -12,6 +12,7 @@ STALE_DAYS = POLICY["freshness"]["stale_days"]
 PASS_AT = POLICY["reputation"]["pass_at"]
 WARN_AT = POLICY["reputation"]["warn_at"]
 MISMATCH = POLICY["ranking"]["metadata_mismatch_factor"]
+OTHER_COUNTRY = POLICY["ranking"]["other_country_factor"]
 AUTHORITY_RANK = {"approved_procedure": 3, "note": 2, "chat": 1}
 # order decides which reason becomes the card headline: "wrong for this customer" beats "old"
 SIGNAL_ORDER = ["applicability", "authority", "freshness", "ownership", "consistency", "validation"]
@@ -117,11 +118,13 @@ def applicability(doc, context, today=None):
 def context_fit(doc, context, today=None):
     """Ranking factor from metadata (trust mode only): demote sources that clearly do not fit.
 
-    Country is deliberately NOT used here: a wrong-country source must stay visible so the
-    card can warn about it; feedback (context_penalty) is what demotes it per country.
+    Country only gets a small tie-breaking nudge: a wrong-country source must stay visible so the
+    card can warn about it; feedback (context_penalty) is what really demotes it per country.
     """
     today = today or date.today()
     factor = 1.0
+    if doc.get("country") and context.get("country") and doc["country"] != context["country"]:
+        factor *= OTHER_COUNTRY
     if doc.get("cla") and context.get("cla") and doc["cla"] != context["cla"]:
         factor *= MISMATCH
     cat = doc.get("employee_category")
