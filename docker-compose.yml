@@ -8,7 +8,9 @@ services:
     ports:
       - "127.0.0.1:8501:8501"      # only reachable from this machine
     environment:
-      - DEMO_MODE=${DEMO_MODE:-true}
+      # read from .env (git-ignored); see .env.example. Start fails if no password is set.
+      - DEMO_PASSWORD=${DEMO_PASSWORD:?Set DEMO_PASSWORD in .env (see .env.example)}
+      - DEMO_MODE=${DEMO_MODE:-false}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     volumes:
       - trust-runtime:/app/runtime # event log survives restarts; Reset restores the seed

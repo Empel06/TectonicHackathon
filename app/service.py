@@ -11,6 +11,7 @@ See README.md "Contract" for the dict shapes.
 from collections import Counter
 from datetime import date
 
+import os
 from datetime import datetime, timedelta, timezone
 
 from app import access, auth, privacy, store
@@ -228,8 +229,11 @@ def add_feedback(answer_id, doc_version_id, user_id, reason_code, comment=None):
     recent = [e for e in store.read_events("feedback") if e["user_id"] == user_id and e["created_at"] >= hour_ago]
     if len(recent) >= POLICY["abuse"]["max_feedback_per_user_per_hour"]:
         raise PermissionDenied("Feedback limit reached for this hour")
-    answers = {e["id"]: e for e in store.read_events("answer")}
-    context = answers.get(answer_id, {}).get("context", {})  # context comes from what the user saw
+    answer = next((e for e in store.read_events("answer") if e["id"] == answer_id), None)
+    # feedback is only accepted on an answer this user received, about a source that answer actually showed
+    if not answer or answer.get("user_id") != user_id or doc_version_id not in answer.get("doc_version_ids", []):
+        raise PermissionDenied("Feedback must refer to a source of one of your own answers")
+    context = answer.get("context", {})  # context comes from what the user saw
     return store.append_event({
         "type": "feedback", "answer_id": answer_id, "doc_version_id": doc_version_id,
         "user_id": user_id, "role": role, "reason_code": reason_code,
@@ -240,14 +244,26 @@ def add_feedback(answer_id, doc_version_id, user_id, reason_code, comment=None):
 
 # ---------- owner inbox ----------
 
-def owner_tasks():
+MAX_TITLE, MAX_SUMMARY, MAX_BODY = 200, 1_000, 20_000
+
+
+def demo_mode():
+    return os.environ.get("DEMO_MODE", "false").lower() == "true"
+
+
+def owner_tasks(user_id):
+    """Tasks for documents this user may see (tenant isolation: other customers' files are never listed)."""
+    person = _require_user(user_id)
     people = store.load_people()
+    customers = store.load_customers()
     feedback = store.read_events("feedback")
     resolved = {e["task_id"]: e for e in store.read_events("resolution")}
     by_doc = _versions_by_doc()
     published = _published_ids()
     tasks = []
     for doc in active_docs():
+        if not access.can_view(doc, person, customers):
+            continue
         dv = doc["doc_version_id"]
         latest = {}
         for e in _feedback_for(dv, feedback):
@@ -261,47 +277,72 @@ def owner_tasks():
         staged = [d for d in by_doc[doc["id"]] if d["version"] > doc["version"]
                   and not d.get("published") and d["doc_version_id"] not in published]
         evs = sorted(latest.values(), key=lambda e: e["created_at"])
-        tasks.append({
+        task = {
             "id": dv, "doc_id": doc["id"], "doc_version_id": dv, "title": doc["title"],
             "owner": owner["name"] if owner else None,
             "owner_active": bool(owner and owner["active"]),
             "routed_to": routed["name"] if routed else "Knowledge team",
+            "routed_to_id": routed["id"] if routed else None,
             "report_count": len(evs),
             "reasons": dict(Counter(REASONS[e["reason_code"]] + (f" ({e['context'].get('country')})" if e["reason_code"] == "wrong_context" else "") for e in evs)),
             "comments": [e["comment"] for e in evs if e.get("comment")],
             "status": "resolved" if dv in resolved else "open",
             "resolution": resolved.get(dv, {}).get("action"),
             "next_version": staged[0]["doc_version_id"] if staged else None,
-        })
+        }
+        task["may_resolve"] = person["role"] == "admin" or user_id in {
+            task["routed_to_id"], doc.get("owner") if task["owner_active"] else None}
+        tasks.append(task)
     tasks.sort(key=lambda t: (t["status"] != "open", -t["report_count"]))
     return tasks
 
 
-def draft_for(task_id):
+def _task_for(task_id, user_id):
+    task = next((t for t in owner_tasks(user_id) if t["id"] == task_id), None)
+    if task is None:
+        raise PermissionDenied("Task not found")
+    if not task["may_resolve"]:
+        raise PermissionDenied("Only the routed owner can act on this task")
+    return task
+
+
+def draft_for(task_id, user_id):
     """Starting text for the owner's new version: the staged draft if one exists, else the live text."""
-    task = next(t for t in owner_tasks() if t["id"] == task_id)
+    task = _task_for(task_id, user_id)
     versions = {d["doc_version_id"]: d for d in store.load_all_versions()}
     base = versions.get(task["next_version"]) or next(d for d in active_docs() if d["doc_version_id"] == task_id)
     return {"title": base["title"], "summary": base["summary"], "body": base["body"],
             "next_version": task["next_version"] or f"{task['doc_id']}@v{int(task_id.rsplit('@v', 1)[1]) + 1}"}
 
 
-def resolve_task(task_id, action, user_id="an-peeters", content=None):
+def _check_content(content, live):
+    title, summary, body = (str(content.get(k) or "").strip() for k in ("title", "summary", "body"))
+    if not title or not summary or not body:
+        raise ValueError("Title, summary and text are required")
+    if len(title) > MAX_TITLE or len(summary) > MAX_SUMMARY or len(body) > MAX_BODY:
+        raise ValueError("Text too long")
+    if (title, summary, body) == (live["title"], live["summary"], live["body"]):
+        raise ValueError("Nothing changed: a new version must change the content")  # no silent reset of doubt
+    if privacy.find_personal_data(" ".join((title, summary, body))):
+        raise ValueError("The text contains personal data; remove it before publishing")
+    return {"title": title, "summary": summary, "body": body}
+
+
+def resolve_task(task_id, action, user_id, content=None):
     """action: publish_new_version | confirm_scope | reject.
 
     publish_new_version without content publishes the staged draft file; with content
     ({"title", "summary", "body"}) the owner's own text becomes the new live version.
     Only the document's active owner, or the person the task was routed to, may resolve it.
     """
-    role = _role(user_id)
-    task = next((t for t in owner_tasks() if t["id"] == task_id), None)
-    if task is None:
-        raise ValueError(f"No task {task_id}")
-    people = store.load_people()
-    if role != "admin" and people[user_id]["name"] not in {task["routed_to"], task["owner"] if task["owner_active"] else None}:
-        raise PermissionDenied(f"Only {task['routed_to']} can resolve this task")
+    task = _task_for(task_id, user_id)
+    if action not in {"publish_new_version", "confirm_scope", "reject"}:
+        raise ValueError("Unknown action")
+    hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(timespec="seconds")
+    recent = [e for e in store.read_events("resolution") if e.get("by") == user_id and e["created_at"] >= hour_ago]
+    if len(recent) >= POLICY["abuse"]["max_resolutions_per_user_per_hour"]:
+        raise PermissionDenied("Too many changes this hour")
     if action == "publish_new_version":
-        task = next(t for t in owner_tasks() if t["id"] == task_id)
         if content is None:
             if not task["next_version"]:
                 raise ValueError("No staged new version for this document")
@@ -309,51 +350,65 @@ def resolve_task(task_id, action, user_id="an-peeters", content=None):
                                 "published_on": today().isoformat(), "by": user_id})
         else:
             live = next(d for d in active_docs() if d["doc_version_id"] == task_id)
+            content = _check_content(content, live)
             people = store.load_people()
             owner = live.get("owner")
             if not owner or not people.get(owner, {}).get("active"):
-                owner = next((p["id"] for p in people.values() if p["name"] == task["routed_to"]), owner)
+                owner = task["routed_to_id"] or owner
+            staged = next((d for d in store.load_all_versions() if d["doc_version_id"] == task["next_version"]), None)
             # the owner's text becomes the staged draft's version if one exists, else the next number
-            new_version = (int(task["next_version"].rsplit("@v", 1)[1]) if task["next_version"]
+            new_version = (staged["version"] if staged
                            else max(d["version"] for d in store.load_all_versions() if d["id"] == live["id"]) + 1)
-            doc = {k: v for k, v in live.items() if k not in ("body", "doc_version_id")}
-            doc["last_reviewed"] = str(doc.get("last_reviewed"))
+            doc = {k: v for k, v in live.items() if k not in ("body", "doc_version_id", "messages")}
             doc.update(version=new_version, published=True, owner=owner, last_reviewed=today().isoformat(),
-                       authority="approved_procedure", title=content["title"], summary=content["summary"],
-                       body=content["body"], source_system="Trust Card owner inbox",
-                       source_location=f"Written and published by {people.get(user_id, {}).get('name', user_id)} "
+                       # authority is not self-granted: it comes from the reviewed draft, else stays as it was
+                       authority=(staged or live).get("authority"),
+                       **content, source_system="Trust Card owner inbox",
+                       source_location=f"Written and published by {people[user_id]['name']} "
                                        f"in the owner inbox on {today().isoformat()}")
-            doc.pop("messages", None)
             doc["doc_version_id"] = f"{doc['id']}@v{new_version}"
             for k in ("valid_from", "valid_until"):
                 if doc.get(k) is not None:
                     doc[k] = str(doc[k])
             store.append_event({"type": "publish", "doc_version_id": doc["doc_version_id"],
                                 "published_on": today().isoformat(), "by": user_id, "doc": doc})
-    elif action not in {"confirm_scope", "reject"}:
-        raise ValueError(f"Unknown action {action}")
     return store.append_event({"type": "resolution", "task_id": task_id, "action": action, "by": user_id})
 
 
-def published_versions():
-    """Where published responses went: every publish event with its live status."""
+def published_versions(user_id):
+    """Where published responses went: publish events for documents this user may see."""
+    person = _require_user(user_id)
+    customers = store.load_customers()
+    versions = {d["doc_version_id"]: d for d in store.load_all_versions()}
     active = {d["doc_version_id"] for d in active_docs()}
     people = store.load_people()
     return [{"doc_version_id": e["doc_version_id"], "published_on": e["published_on"],
              "by": people.get(e.get("by"), {}).get("name", e.get("by")),
              "written_in_app": bool(e.get("doc")), "live": e["doc_version_id"] in active}
-            for e in reversed(store.read_events("publish"))]
+            for e in reversed(store.read_events("publish"))
+            if e["doc_version_id"] in versions and access.can_view(versions[e["doc_version_id"]], person, customers)]
 
 
-def reset(user_id=None):
-    """Demo control: restores the seed. Restricted to the admin role in the UI's secured mode."""
-    if user_id is not None and _role(user_id) != "admin":
+def reset(user_id):
+    """Demo control: restores the seed. Admin only, or any signed-in user when DEMO_MODE is on."""
+    person = _require_user(user_id)
+    if person["role"] != "admin" and not demo_mode():
         raise PermissionDenied("Only the admin can reset the demo")
     store.reset()
 
 
-def audit_log(limit=200):
-    """Who did what, newest first, plus whether the hash chain is intact."""
+def simulate_tampering(user_id):
+    """Demo control: silently edit one stored event. Admin only, and only in demo mode."""
+    person = _require_user(user_id)
+    if person["role"] != "admin" or not demo_mode():
+        raise PermissionDenied("Not available")
+    store.simulate_tampering()
+
+
+def audit_log(user_id, limit=200):
+    """Who did what, newest first, plus whether the hash chain is intact. Admin only."""
+    if _require_user(user_id)["role"] != "admin":
+        raise PermissionDenied("Admins only")
     people = store.load_people()
     ok, bad, total = store.verify_chain()
     rows = []
@@ -367,7 +422,8 @@ def audit_log(limit=200):
         rows.append({"time": e["created_at"], "user": people.get(who, {}).get("name", who), "event": e["type"],
                      "action": what, "document": e.get("doc_version_id") or e.get("task_id") or "",
                      "hash": (e.get("hash") or "")[:12]})
-    return {"chain_ok": ok, "first_bad_index": bad, "total": total, "rows": rows}
+    return {"chain_ok": ok, "first_bad_index": bad, "total": total, "rows": rows,
+            "rejected_files": store.rejected_files()}
 
 
 # ---------- evidence & knowledge base (read-only views) ----------
@@ -389,9 +445,9 @@ def document_details(doc_version_id, user_id):
     events = sorted(_feedback_for(doc_version_id, store.read_events("feedback")),
                     key=lambda e: e["created_at"], reverse=True)
     found = access.personal_data_found(doc)
-    if found:  # only an admin gets here; show it masked
-        doc = {**doc, "summary": privacy.redact(doc.get("summary")), "body": privacy.redact(doc.get("body")),
-               "messages": [{**m, "text": privacy.redact(m.get("text"))} for m in doc.get("messages") or []]}
+    if found:  # only an admin gets here, and never sees the content itself (names cannot be masked reliably)
+        withheld = "[Content withheld: this source contains personal data and is quarantined.]"
+        doc = {**doc, "summary": withheld, "body": withheld, "messages": []}
     return {
         **{k: doc.get(k) for k in ("id", "version", "title", "country", "cla", "topic", "authority",
                                    "last_reviewed", "summary", "body", "likes", "customer_id")},
@@ -443,8 +499,8 @@ def knowledge_base(user_id):
     rows = []
     for d in store.load_all_versions():
         doc = active.get(d["doc_version_id"], d)
-        if doc.get("customer_id") and not access.can_view(doc, person, customers):
-            continue  # other customers' documents are not even listed
+        if (doc.get("customer_id") or access.quarantined(doc)) and not access.can_view(doc, person, customers):
+            continue  # other customers' documents and quarantined sources are not even listed
         owner = people.get(doc.get("owner") or "")
         evs = _feedback_for(d["doc_version_id"], feedback)
         rows.append({

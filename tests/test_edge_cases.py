@@ -81,7 +81,7 @@ def test_owner_written_version_goes_live_and_old_one_is_superseded():
     assert r["signals"]["freshness"]["status"] == "pass"
     kb = {row["doc_version_id"]: row["status"] for row in service.knowledge_base("admin")}
     assert kb["be-holiday-pay@v1"] == "Superseded" and kb["be-holiday-pay@v2"] == "Live"
-    assert service.published_versions()[0]["live"]
+    assert service.published_versions("admin")[0]["live"]
     store.reset()
     assert "be-holiday-pay@v2" not in {d["doc_version_id"] for d in store.load_all_versions()}
 
@@ -123,7 +123,7 @@ def test_owner_written_version_records_where_it_was_published():
 
 
 def test_owner_text_replaces_the_staged_draft_as_the_same_version():
-    draft = service.draft_for("nl-13th-month@v1")  # the editor is pre-filled with this
+    draft = service.draft_for("nl-13th-month@v1", "eva-smit")  # the editor is pre-filled with this
     service.resolve_task("nl-13th-month@v1", "publish_new_version", "eva-smit",
                          {"title": draft["title"], "summary": "Owner's own summary. " + draft["summary"],
                           "body": draft["body"]})

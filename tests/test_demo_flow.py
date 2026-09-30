@@ -35,5 +35,6 @@ def test_demo_flow():
     assert r["sources"][0]["doc_version_id"] == "nl-13th-month@v2"
     assert r["confidence"] == "MEDIUM"
 
-    service.add_feedback(r["answer_id"], "nl-13th-month@v2", "mark-de-vries", "expert_confirmed")
+    expert_view = service.ask(Q, NL, user_id="mark-de-vries")
+    service.add_feedback(expert_view["answer_id"], "nl-13th-month@v2", "mark-de-vries", "expert_confirmed")
     assert service.ask(Q, NL, user_id="sofie")["confidence"] == "HIGH"

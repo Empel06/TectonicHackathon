@@ -61,7 +61,7 @@ size. It never needs to know *who* is sick or *what* someone earns. So:
    Feedback comments are redacted before storage.
 4. **Everything is traceable.** Each answer records which document versions it used, and access denials and all
    other events sit in the hash-chained audit log.
-5. **Source links** carry a signed token valid for 15 minutes (HMAC-SHA256, tied to the user), so a source opens in a
+5. **Source links** carry a signed token valid for 5 minutes (HMAC-SHA256, tied to the user), so a source opens in a
    new tab without a new login, while access is still checked on the page itself.
 
 ### Production additions
@@ -87,22 +87,26 @@ SHA, and checks out with `persist-credentials: false`, so the `GITHUB_TOKEN` is 
 
 ## Scanner findings addressed (Aikido, 30 September 2026)
 
-| Finding | Fix |
-|---|---|
-| Hard-coded credentials (UI) | The demo password is no longer shown in the application; it is only in the README for judges |
-| Improper access control / cross-tenant bypass | `ask`, `document_details` and `knowledge_base` require an authenticated, active user; asking for a customer outside the user's portfolio is refused |
-| Uncontrolled resource consumption | Questions capped at 500 characters; comments at 500 |
-| Excessive authentication attempts | Per-account lockout plus a delay on every failed login |
-| Missing rate limiting | Feedback: 20 per user per hour; questions: 60 per user per minute (policy.yaml) |
-| Error messages | Generic messages; no user input or internals echoed |
-| Checkout credentials in CI | `persist-credentials: false`, actions pinned to commit SHAs |
+| Finding | Root cause | Fix |
+|---|---|---|
+| Hard-coded credentials | Hashes of a published demo password in `data/users.json`; account list in the UI | No credentials in the repository: the password comes from `DEMO_PASSWORD` in a git-ignored `.env`, hashed in memory at start-up; without it nobody can sign in. Account list removed from the UI |
+| Improper access control | Default users (`user_id="sofie"`, `"an-peeters"`), unchecked `reset(None)`, audit log and publish history without checks, UI calling the store directly | Every service function requires an authenticated, active user and checks the role; audit log and tamper simulation are admin-only; reset is admin-only unless `DEMO_MODE=true` |
+| Cross-tenant isolation bypass | Owner inbox listed tasks (titles, comments) for every customer; drafts readable by anyone | Owner inbox, drafts and publish history only include documents the user may see; asking for a customer outside the portfolio is refused |
+| Business logic bypass | Feedback accepted on any document; publishing self-granted "approved" authority; republishing unchanged text wiped doubt | Feedback must refer to a source of the user's own answer; authority comes from the reviewed draft or stays unchanged; unchanged or personal-data content is refused |
+| Insufficient verification of data authenticity | Event log and document files trusted as read | Events after a broken hash link are ignored (fail closed); document files load only if their SHA-256 matches `data/docs.manifest.json` |
+| Uncontrolled resource consumption | Unbounded failed-login map, username length, published text, repeated log reads | Bounded failed-login tracking, input length limits (username 64, question 500, title 200, summary 1,000, text 20,000), cached log reads |
+| Excessive authentication attempts | Per-account lockout only | Per-account lockout plus a per-session lockout (5 failures, 5 minutes); no blocking sleeps |
+| Missing rate limiting | No limits on questions or owner actions | Questions 60/min, feedback 20/h, owner actions 20/h per user (`policy.yaml`) |
+| Exposure of sensitive information | Quarantined content shown (masked) to admins; names not maskable; sign-in token kept in the URL | Quarantined content is never shown, only its metadata; quarantined sources are hidden from non-admins; link tokens last 5 minutes and are removed from the URL after use |
+| Information exposure through error messages | Exception text shown in the UI; Streamlit tracebacks | `showErrorDetails = "none"`; generic permission messages |
+| Checkout credentials in CI | Default `persist-credentials` | `persist-credentials: false`, actions pinned to commit SHAs |
 
 ## Demo mode
 
 `DEMO_MODE=true` (default in `docker-compose.yml`) shows the demo accounts on the login page, lets every user
 reset the demo and enables the tamper simulation. Set `DEMO_MODE=false` for anything beyond a demo.
 
-Demo accounts (password `demo2026`): `sofie` (consultant), `eva-smit` (owner NL), `an-peeters` (owner BE),
+Demo accounts (password: the `DEMO_PASSWORD` you set in `.env`): `sofie` (consultant), `eva-smit` (owner NL), `an-peeters` (owner BE),
 `mark-de-vries` (expert NL), `admin`. `joost-bakker` has left the company and is refused.
 
 ## Known gaps (out of scope for the PoC)

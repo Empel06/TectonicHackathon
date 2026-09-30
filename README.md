@@ -18,10 +18,12 @@ Requires Docker Desktop.
 ```bash
 git clone git@github.com:Empel06/TectonicHackathon.git
 cd TectonicHackathon
+cp .env.example .env          # then set DEMO_PASSWORD to a password of your choice
 docker compose up --build
 ```
 
-Open **http://localhost:8501** and sign in. Every demo account uses the password `demo2026`:
+No credentials live in the repository: the password for the demo accounts is whatever you put in `.env`
+(git-ignored). Without it, nobody can sign in. Open **http://localhost:8501** and sign in with one of these accounts:
 
 | Username | Role | Use it for |
 |---|---|---|
@@ -32,9 +34,10 @@ Open **http://localhost:8501** and sign in. Every demo account uses the password
 | `bram-janssen` | Owner, Dutch healthcare | CAO VVT and Zorggroep Oost |
 | `mark-de-vries` | Expert, Netherlands | Confirming answers |
 | `sarah-dubois` | Expert, Belgium | Confirming answers |
-| `admin` | Admin | Reset, audit, quarantined sources |
+| `admin` | Admin | Audit log, reset, quarantined sources |
 | `joost-bakker` | Left the company | Shows that the login is refused |
 
+`DEMO_MODE=true` in `.env` enables the demo controls (reset for everyone, tamper simulation); it is off by default.
 The demo state lives on a Docker volume. Click **Reset demo state** in the sidebar before a demo, or after pulling new data.
 
 **No API key is needed.** Retrieval, trust scoring, feedback and the owner inbox all run locally. Answers are the cited
@@ -75,11 +78,11 @@ procedures, popular-but-wrong chats, broken metadata, confidential customer file
 
 Security is built in, not added afterwards. Every rule below is enforced in the service layer and covered by tests.
 
-- **Authentication:** salted PBKDF2 password hashes, constant-time checks, lockout after 5 failures; people who left are refused.
+- **Authentication:** no credentials in the repository (password from `.env`, hashed in memory), constant-time checks, per-account and per-session lockout, bounded attempt tracking; people who left are refused.
 - **Authorisation:** only the routed owner publishes, only experts give expert verdicts, and consultants only see customers in their portfolio.
 - **Customer data separation:** confidential customer files are used only for that customer and only by its team, enforced before retrieval. Direct links are checked too, and refusals are logged.
 - **Personal data:** sources containing national numbers, IBANs, BSNs, email addresses or phone numbers are quarantined, and feedback comments are redacted before storage.
-- **Integrity:** a hash-chained audit log detects tampering (try **Audit log → Simulate tampering**).
+- **Integrity:** a hash-chained audit log detects tampering and stops using history after a broken link (fail closed); document files load only if their SHA-256 matches the reviewed manifest (`scripts/update_manifest.py`).
 - **Supply chain:** `requirements.lock` pins all 41 dependencies with SHA-256 hashes, and the image installs with `--require-hashes`.
 - **Container:** non-root user, read-only filesystem, all capabilities dropped, `no-new-privileges`, port bound to localhost.
 
@@ -116,7 +119,7 @@ core/           Trust logic (pure functions) and policy loader
 ui/             Streamlit application
 config/         Versioned trust policy (policy.yaml)
 data/           Synthetic documents, people, customers, hashed demo accounts, seeded feedback
-tests/          63 tests: trust core, demo flow, edge cases, security, data access
+tests/          78 tests: trust core, demo flow, edge cases, security, data access
 docs/           Solution design, scenarios, screenshots
 ```
 
@@ -125,8 +128,9 @@ docs/           Solution design, scenarios, screenshots
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate   # the lockfile targets Python 3.12
 pip install --require-hashes -r requirements.lock
+export DEMO_PASSWORD=choose-one DEMO_MODE=true
 streamlit run ui/app.py        # the app, with reload on save
-pytest -q                      # 63 tests; test_demo_flow.py replays the demo
+pytest -q                      # 78 tests; test_demo_flow.py replays the demo
 ```
 
 Tests also run in the container (`docker run --rm trust-card python -m pytest -q`) and on every push through GitHub Actions.

@@ -5,6 +5,7 @@ Only talks to app.service (the contract). Person B owns this file.
 import html
 import os
 import sys
+import time
 from urllib.parse import quote
 from pathlib import Path
 
@@ -14,7 +15,7 @@ import streamlit as st  # noqa: E402
 
 from app import service, store  # noqa: E402
 
-DEMO_MODE = os.environ.get("DEMO_MODE", "true").lower() == "true"  # enables Reset + tamper demo for everyone
+DEMO_MODE = os.environ.get("DEMO_MODE", "false").lower() == "true"  # secure default; demo controls only when set
 HERO_QUESTION = "Do our part-time employees get a pro-rata end-of-year bonus (13th month) in December?"
 SIGNAL_LABEL = {"freshness": "Freshness", "ownership": "Ownership", "authority": "Authority",
                 "applicability": "Applicability", "consistency": "Consistency", "validation": "Validation"}
@@ -243,33 +244,35 @@ def login_page():
              <div class="tc-title">Trust Card Assistant</div>
              <div class="tc-section-sub">Sign in to continue. Passwords are stored as salted PBKDF2 hashes;
              5 failed attempts lock the account for 5 minutes.</div></div>""")
+        if not service.auth.configured():
+            st.error("Sign-in is not configured. Set DEMO_PASSWORD in the .env file (see .env.example) and restart.")
+            return
+        blocked_until = st.session_state.get("login_blocked_until", 0)
         with st.form("login"):
-            username = st.text_input("Username")
-            password = st.text_input("Password", type="password")
+            username = st.text_input("Username", max_chars=64)
+            password = st.text_input("Password", type="password", max_chars=256)
             if st.form_submit_button("Sign in", type="primary", width="stretch"):
-                person_id = service.login(username, password)
-                if person_id:
-                    st.session_state.clear()
-                    st.session_state["user_id"] = person_id
-                    st.rerun()
-                st.error("Invalid credentials, inactive account, or too many attempts.")
-        if DEMO_MODE:
-            with st.expander("Demo accounts (the demo password is in the README)"):
-                st.dataframe([{"Username": "sofie", "Role": "Consultant", "Use for": "Asking and reporting"},
-                              {"Username": "eva-smit", "Role": "Owner (NL)", "Use for": "Publishing the Dutch fix"},
-                              {"Username": "an-peeters", "Role": "Owner (BE)", "Use for": "Belgian documents"},
-                              {"Username": "mark-de-vries", "Role": "Expert (NL)", "Use for": "Confirming answers"},
-                              {"Username": "sarah-dubois", "Role": "Expert (BE)", "Use for": "Belgian verdicts"},
-                              {"Username": "lotte-wouters", "Role": "Owner (BE social law)", "Use for": "Hospitality, students"},
-                              {"Username": "bram-janssen", "Role": "Owner (NL healthcare)", "Use for": "CAO VVT"},
-                              {"Username": "admin", "Role": "Admin", "Use for": "Reset, audit"},
-                              {"Username": "joost-bakker", "Role": "Left the company", "Use for": "Login is refused"}],
-                             hide_index=True, width="stretch")
+                if time.time() < blocked_until:
+                    st.error("Too many attempts. Try again in a few minutes.")
+                else:
+                    person_id = service.login(username, password)
+                    if person_id:
+                        st.session_state.clear()
+                        st.session_state["user_id"] = person_id
+                        st.rerun()
+                    tries = st.session_state.get("login_failures", 0) + 1
+                    st.session_state["login_failures"] = tries
+                    if tries >= 5:  # per-session limit on top of the per-account lockout
+                        st.session_state["login_blocked_until"] = time.time() + 300
+                        st.session_state["login_failures"] = 0
+                    st.error("Invalid credentials, inactive account, or too many attempts.")
+        st.caption("Demo accounts are listed in the README.")
 
 
 if "user_id" not in st.session_state and (token := st.query_params.get("s")):
-    if person_id := service.login_from_link(token):  # signed 15-minute link from a signed-in tab
+    if person_id := service.login_from_link(token):  # signed 5-minute link from a signed-in tab
         st.session_state["user_id"] = person_id
+    del st.query_params["s"]  # the token never stays in the address bar or browser history
 if "user_id" not in st.session_state:
     login_page()
     st.stop()
@@ -279,7 +282,10 @@ def guarded(action, *args):
     """Run a service action; show a permission error instead of crashing."""
     try:
         return action(*args)
-    except service.PermissionDenied as e:
+    except service.PermissionDenied:
+        st.session_state["error"] = "This action is not allowed for your account."
+        st.rerun()
+    except ValueError as e:  # our own validation messages; they never echo user input
         st.session_state["error"] = str(e)
         st.rerun()
 
@@ -322,7 +328,7 @@ with st.sidebar:
     st.caption(f"Trust policy v{service.trust.POLICY_VERSION} · rule-based · all data synthetic")
     if DEMO_MODE or people[user_id]["role"] == "admin":
         if st.button("Reset demo state", width="stretch"):
-            guarded(service.reset, None if DEMO_MODE else user_id)
+            guarded(service.reset, user_id)
             st.session_state.clear()
             st.session_state["user_id"] = user_id
             st.rerun()
@@ -346,7 +352,7 @@ show(
 if msg := st.session_state.pop("toast", None):
     st.toast(msg)
 if err := st.session_state.pop("error", None):
-    st.error(f"Not allowed: {err}")
+    st.error(err)
 
 
 # ---------- state ----------
@@ -605,7 +611,7 @@ with tab_owner:
         show(f"""<div class="tc-published"><b>{esc(jp[0])} is now live.</b> Every new answer uses it from now on.
              The old version {esc(jp[1])} stays in the Knowledge base as Superseded, with its reports attached.
              Ask the question again to see the new Trust Card.</div>""")
-    tasks = service.owner_tasks()
+    tasks = service.owner_tasks(user_id)
     open_tasks = [t for t in tasks if t["status"] == "open"]
     show(
         f"""<div class="tc-stats">
@@ -626,13 +632,12 @@ with tab_owner:
                 <div class="tc-task-meta">{esc(t['doc_version_id'])} · Owner: {esc(owner)}{routing}
                   · {t['report_count']} report{'s' if t['report_count'] != 1 else ''}</div>
                 <div class="tc-reasons">{reasons}</div>{comments}""")
-            may_resolve = people[user_id]["role"] == "admin" or people[user_id]["name"] in {
-                t["routed_to"], t["owner"] if t["owner_active"] else None}
+            may_resolve = t["may_resolve"]
             if t["status"] == "open" and not may_resolve:
                 st.caption(f"Only {t['routed_to']} can publish or resolve this task. Sign in as them to act on it.")
             elif t["status"] == "open":
                 with st.expander("Write and publish a corrected version"):
-                    draft = service.draft_for(t["id"])
+                    draft = service.draft_for(t["id"], user_id)
                     with st.form(f"publish-{t['id']}"):
                         title = st.text_input("Title", draft["title"])
                         summary = st.text_area("Summary (used as the answer)", draft["summary"], height=90)
@@ -655,7 +660,7 @@ with tab_owner:
             else:
                 st.caption(f"Resolved: {(t['resolution'] or '').replace('_', ' ')}")
 
-    published = service.published_versions()
+    published = service.published_versions(user_id)
     if published:
         show("<div class='tc-section'>Published versions</div><div class='tc-section-sub'>Where published "
              "responses go: each one becomes the live version used in answers.</div>")
@@ -685,20 +690,26 @@ with tab_kb:
                  "The attempt has been recorded in the audit log.")
 
 with tab_audit:
-    audit = service.audit_log()
-    if audit["chain_ok"]:
-        show(f"<div class='tc-published'><b>Audit chain intact.</b> {audit['total']} events, each sealed with the "
-             "SHA-256 hash of the previous one. Editing, deleting or reordering any stored event breaks the chain.</div>")
+    if people[user_id]["role"] != "admin":
+        st.caption("The audit log is available to admins only.")
     else:
-        show(f"<div class='tc-quality'><b>Tampering detected at event #{audit['first_bad_index']}.</b> The stored log "
-             "no longer matches its hash chain. Every event from that point on is untrusted.</div>")
-    if DEMO_MODE and audit["chain_ok"] and st.button("Simulate tampering (demo)",
-                                                      help="Silently edits one stored event, as an insider editing the file would"):
-        service.store.simulate_tampering()
-        st.rerun()
-    st.dataframe([{"Time": r["time"], "User": r["user"], "Event": r["event"], "Action": r["action"],
-                   "Document": r["document"], "Hash": r["hash"]} for r in audit["rows"]],
-                 hide_index=True, width="stretch")
+        audit = service.audit_log(user_id)
+        if audit["chain_ok"]:
+            show(f"<div class='tc-published'><b>Audit chain intact.</b> {audit['total']} events, each sealed with the "
+                 "SHA-256 hash of the previous one. Editing, deleting or reordering any stored event breaks the chain.</div>")
+        else:
+            show(f"<div class='tc-quality'><b>Tampering detected at event #{audit['first_bad_index']}.</b> The stored log "
+                 "no longer matches its hash chain. Events from that point on are no longer used (fail closed).</div>")
+        if audit["rejected_files"]:
+            show(f"<div class='tc-quality'><b>{len(audit['rejected_files'])} document file(s) ignored:</b> not in the "
+                 "reviewed manifest or altered since review.</div>")
+        if DEMO_MODE and audit["chain_ok"] and st.button(
+                "Simulate tampering (demo)", help="Silently edits one stored event, as an insider editing the file would"):
+            guarded(service.simulate_tampering, user_id)
+            st.rerun()
+        st.dataframe([{"Time": r["time"], "User": r["user"], "Event": r["event"], "Action": r["action"],
+                       "Document": r["document"], "Hash": r["hash"]} for r in audit["rows"]],
+                     hide_index=True, width="stretch")
 
 with tab_policy:
     pol = service.POLICY

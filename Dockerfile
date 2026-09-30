@@ -4,7 +4,7 @@ WORKDIR /app
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
     HOME=/tmp \
     TRUST_RUNTIME_DIR=/app/runtime \
-    DEMO_MODE=true
+    DEMO_MODE=false
 
 # Every dependency pinned with a SHA-256 hash (requirements.lock): a tampered package fails the build
 COPY requirements.lock .

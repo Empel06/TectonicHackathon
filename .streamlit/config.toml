@@ -8,6 +8,7 @@ font = "sans serif"
 
 [client]
 toolbarMode = "minimal"
+showErrorDetails = "none"  # never show tracebacks or exception text to users
 
 [browser]
 gatherUsageStats = false

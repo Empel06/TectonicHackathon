@@ -35,11 +35,30 @@ def load_all_versions():
     return versions
 
 
+MANIFEST = DATA / "docs.manifest.json"
+
+
+def file_digest(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def rejected_files():
+    """Document files whose SHA-256 is missing from, or differs from, the reviewed manifest."""
+    manifest = json.loads(MANIFEST.read_text()) if MANIFEST.exists() else {}
+    return sorted(p.name for p in DOCS_DIR.glob("*.md") if manifest.get(p.name) != file_digest(p))
+
+
 @functools.lru_cache(maxsize=4)
 def _parse_files(signature):
-    """Parse the document files once; the cache key changes when any file is added, removed or edited."""
+    """Parse the document files once; the cache key changes when any file is added, removed or edited.
+
+    Only files listed in the manifest with a matching SHA-256 are loaded (unreviewed or altered files are ignored).
+    """
+    manifest = json.loads(MANIFEST.read_text()) if MANIFEST.exists() else {}
     docs = []
     for name, _ in signature:
+        if manifest.get(name) != file_digest(DOCS_DIR / name):
+            continue
         _, front, body = (DOCS_DIR / name).read_text().split("---", 2)
         doc = yaml.safe_load(front)
         doc["body"] = body.strip()
@@ -103,12 +122,27 @@ def simulate_tampering():
     EVENTS.write_text("\n".join(lines) + "\n")
 
 
+_read_cache = {}
+
+
 def read_events(type_=None):
+    """Events up to the first one that breaks the hash chain (fail closed: tampered history is not used)."""
     if not EVENTS.exists():
         reset()
-    with _lock:
-        lines = EVENTS.read_text().splitlines()
-    events = [json.loads(line) for line in lines if line.strip()]
+    stat = EVENTS.stat()
+    key = (str(EVENTS), stat.st_mtime_ns, stat.st_size)
+    if _read_cache.get("key") != key:
+        with _lock:
+            lines = [line for line in EVENTS.read_text().splitlines() if line.strip()]
+        events, prev = [], GENESIS
+        for line in lines:
+            event = json.loads(line)
+            if event.get("prev_hash") != prev or event.get("hash") != _chain_hash(prev, event):
+                break
+            prev = event["hash"]
+            events.append(event)
+        _read_cache.update(key=key, events=events)
+    events = [dict(e) for e in _read_cache["events"]]
     for e in events:
         e.setdefault("type", "feedback")
     return [e for e in events if type_ is None or e["type"] == type_]
