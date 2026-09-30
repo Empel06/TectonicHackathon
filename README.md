@@ -11,7 +11,8 @@ docker compose up --build     # then open http://localhost:8501
 ```
 
 Sign in with a demo account (password `demo2026` for all): `sofie` (consultant), `eva-smit` (owner NL),
-`an-peeters` (owner BE), `mark-de-vries` (expert NL), `admin`. See [SECURITY.md](SECURITY.md) for the threat model.
+`an-peeters` (owner BE), `lotte-wouters` (owner BE social law), `bram-janssen` (owner NL healthcare),
+`mark-de-vries` (expert NL), `sarah-dubois` (expert BE), `admin`. See [SECURITY.md](SECURITY.md) for the threat model.
 
 **No API key needed.** Everything runs locally: retrieval, trust scoring, feedback and the owner inbox. Answers
 are the cited source's own summary. Setting `ANTHROPIC_API_KEY` is only for a future step, where a language
@@ -45,6 +46,27 @@ To publish (step 4), sign out and sign in as `eva-smit`. To confirm (step 5), si
    *Feedback may create doubt automatically, but only people can create certainty.*
 
 `tests/test_demo_flow.py` asserts exactly this script. If it passes, the demo works.
+
+## Demo companies and their problems
+
+Each customer has a sector, a profile and its own typical questions (shown in the sidebar). The **Scenario**
+dropdown on the Ask tab groups 24 prepared cases by company; any other question can be typed freely, in English,
+Dutch or French.
+
+| Company | Profile | Typical questions and what the card shows |
+|---|---|---|
+| Van Dijk BV (NL, retail, 40) | Part-timers, students | 13th month (LOW: Belgian source) · holiday allowance (LOW: popular chat) · youth minimum wage (MEDIUM: valid H2 2026 only) · transition payment (MEDIUM: contradiction) |
+| Janssens NV (BE, PC 200, IT, white-collar, 25) | Company cars, home working | Meal vouchers (HIGH, expert-validated) · eco-cheques (MEDIUM, new) · telework (LOW: expired) · company car (LOW: broken metadata) · bicycle (UNKNOWN) |
+| Bouwbedrijf Maes (BE, PC 124, construction, blue-collar, 60) | Site workers, sector fund | Year-end premium (paid by the fund) · mobility allowance (HIGH) · bad weather (LOW: stale, reported incomplete) · Belgian PC 200 bonus rule (LOW: wrong joint committee) |
+| Brasserie De Kaai (BE, PC 302, hospitality, 18) | Flexi-jobs, students, tips | Flexi-job (HIGH) · student hours (MEDIUM: 2026 rule; the 2027 announcement and an outdated chat do not override it) · tips (LOW: 2024 note, owner left) |
+| Zorggroep Oost (NL, CAO VVT, healthcare, 340) | Shifts, nights, weekends | ORT allowance (MEDIUM: new version after reports; the 2024 table is superseded) · sick pay 104 weeks (HIGH) · the same ORT question in Dutch |
+| Müller GmbH (DE, manufacturing, 120) | New country | Every answer is LOW: no German source exists |
+
+The knowledge base has **27 synthetic documents** from SharePoint, Confluence, Teams and a legacy knowledge base,
+including a superseded version, an announced future rule, outdated notes, ownerless pages and popular-but-wrong chats.
+
+> After pulling new data, click **Reset demo state** once. The event log lives on a Docker volume, so the new seed
+> history only loads after a reset (or run `docker compose down -v`).
 
 ## Test scenarios (edge cases)
 

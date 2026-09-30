@@ -1,6 +1,90 @@
 [
-  {"id": "van-dijk", "name": "Van Dijk BV",       "country": "NL", "cla": null,    "employee_category": null,           "employees": 40},
-  {"id": "janssens", "name": "Janssens NV",       "country": "BE", "cla": "PC200", "employee_category": "white_collar", "employees": 25},
-  {"id": "maes",     "name": "Bouwbedrijf Maes",  "country": "BE", "cla": "PC124", "employee_category": "blue_collar",  "employees": 60},
-  {"id": "muller",   "name": "Müller GmbH",       "country": "DE", "cla": null,    "employee_category": null,           "employees": 120}
+ {
+  "id": "van-dijk",
+  "name": "Van Dijk BV",
+  "country": "NL",
+  "cla": null,
+  "employee_category": null,
+  "employees": 40,
+  "sector": "Retail (shops)",
+  "profile": "Many part-timers and students; relies on the service desk for Dutch rules.",
+  "known_issues": [
+   "Asked for the Belgian 13th-month rule by mistake",
+   "Unsure about holiday allowance percentage",
+   "Young workers on minimum youth wage"
+  ]
+ },
+ {
+  "id": "janssens",
+  "name": "Janssens NV",
+  "country": "BE",
+  "cla": "PC200",
+  "employee_category": "white_collar",
+  "employees": 25,
+  "sector": "IT consultancy",
+  "profile": "White-collar staff, company cars, home working.",
+  "known_issues": [
+   "Company car benefit in kind",
+   "Telework allowance for 2026",
+   "Meal vouchers and eco-cheques"
+  ]
+ },
+ {
+  "id": "maes",
+  "name": "Bouwbedrijf Maes",
+  "country": "BE",
+  "cla": "PC124",
+  "employee_category": "blue_collar",
+  "employees": 60,
+  "sector": "Construction",
+  "profile": "Blue-collar site workers; sector fund pays some premiums.",
+  "known_issues": [
+   "Who pays the year-end premium",
+   "Bad-weather unemployment in winter",
+   "Mobility allowance per site"
+  ]
+ },
+ {
+  "id": "de-kaai",
+  "name": "Brasserie De Kaai",
+  "country": "BE",
+  "cla": "PC302",
+  "employee_category": null,
+  "employees": 18,
+  "sector": "Hospitality (horeca)",
+  "profile": "Flexi-jobs, students and tips; peak staffing in summer.",
+  "known_issues": [
+   "Can a flexi-job be combined with a part-time main job",
+   "Student hour quota",
+   "Tips and service charge"
+  ]
+ },
+ {
+  "id": "zorggroep-oost",
+  "name": "Zorggroep Oost",
+  "country": "NL",
+  "cla": "CAO VVT",
+  "employee_category": null,
+  "employees": 340,
+  "sector": "Healthcare (nursing and home care)",
+  "profile": "Shift work, nights and weekends under CAO VVT.",
+  "known_issues": [
+   "Irregular hours allowance (ORT) table",
+   "Sick pay during long absence",
+   "Night and holiday shifts"
+  ]
+ },
+ {
+  "id": "muller",
+  "name": "Müller GmbH",
+  "country": "DE",
+  "cla": null,
+  "employee_category": null,
+  "employees": 120,
+  "sector": "Manufacturing",
+  "profile": "New German customer; no German knowledge base yet.",
+  "known_issues": [
+   "Every answer must show there is no German source"
+  ]
+ }
 ]

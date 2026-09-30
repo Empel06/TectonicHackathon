@@ -127,16 +127,22 @@ def context_fit(doc, context, today=None):
     cat = doc.get("employee_category")
     if cat and context.get("employee_category") and cat != context["employee_category"]:
         factor *= MISMATCH
-    until = _as_date(doc.get("valid_until"))
+    until, since = _as_date(doc.get("valid_until")), _as_date(doc.get("valid_from"))
     if until and until < today:
+        factor *= MISMATCH
+    if since and since > today:
         factor *= MISMATCH
     return factor
 
 
-def _applies_to(doc, context):
-    """Could this source be meant for this customer? (used to decide what counts as a contradiction)"""
+def _applies_to(doc, context, today=None):
+    """Could this source be meant for this customer, today? (used to decide what counts as a contradiction)"""
+    today = today or date.today()
     if doc.get("country") and doc["country"] != context.get("country"):
         return False
+    since, until = _as_date(doc.get("valid_from")), _as_date(doc.get("valid_until"))
+    if (since and since > today) or (until and until < today):
+        return False  # a rule not (or no longer) in force cannot contradict the current one
     for key in ("cla", "employee_category"):
         if doc.get(key) and context.get(key) and doc[key] != context[key]:
             return False

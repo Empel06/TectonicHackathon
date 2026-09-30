@@ -20,27 +20,50 @@ SIGNAL_LABEL = {"freshness": "Freshness", "ownership": "Ownership", "authority":
                 "applicability": "Applicability", "consistency": "Consistency", "validation": "Validation"}
 STATUS_LABEL = {"pass": "Pass", "warn": "Warning", "fail": "Fail", "unknown": "No data"}
 SCENARIOS = [
-    ("Hero: wrong country (NL customer, Belgian rule)", "van-dijk", HERO_QUESTION),
-    ("Same question, Belgian PC 200 customer (should be HIGH)", "janssens", HERO_QUESTION),
-    ("Same question, construction customer PC 124 (wrong joint committee)", "maes", HERO_QUESTION),
-    ("Construction premium for a PC 124 customer (no feedback yet)", "maes",
-     "Who pays the year-end premium for construction workers?"),
-    ("Expired rule: 2025 telework allowance asked in 2026", "janssens",
-     "What is the maximum tax-free telework allowance?"),
-    ("Two procedures contradict each other (NL transition payment)", "van-dijk",
-     "Is a transition payment due on dismissal in the first year of service?"),
-    ("Popular but wrong chat: 6% holiday allowance with 3 upvotes", "van-dijk",
+    # (label, customer, question): grouped by demo company, each with its own typical problems
+    ("Van Dijk BV · Hero: Belgian 13th-month rule for a Dutch customer", "van-dijk", HERO_QUESTION),
+    ("Van Dijk BV · Popular but wrong chat: 6% holiday allowance", "van-dijk",
      "How much holiday allowance (vakantiegeld) do Dutch employees get?"),
-    ("Broken metadata: company car page imported without owner or date", "janssens",
+    ("Van Dijk BV · Minimum youth wage for an 18-year-old (valid H2 2026 only)", "van-dijk",
+     "What minimum youth wage applies to an 18-year-old?"),
+    ("Van Dijk BV · Transition payment: two procedures contradict", "van-dijk",
+     "Is a transition payment due on dismissal in the first year of service?"),
+    ("Janssens NV · Same bonus question, Belgian PC 200 customer (HIGH)", "janssens", HERO_QUESTION),
+    ("Janssens NV · Meal vouchers on sick days (validated by expert)", "janssens",
+     "Do we give meal vouchers for sick days?"),
+    ("Janssens NV · Eco-cheques reference period (new, not yet validated)", "janssens",
+     "When are eco-cheques paid and what is the reference period?"),
+    ("Janssens NV · Expired rule: 2025 telework allowance", "janssens",
+     "What is the maximum tax-free telework allowance?"),
+    ("Janssens NV · Broken metadata: company car page", "janssens",
      "How is the benefit in kind for a company car calculated?"),
-    ("White-collar customer: sickness guaranteed salary", "janssens",
-     "How long do we pay guaranteed salary during sickness?"),
-    ("Blue-collar customer: same question", "maes", "How long do we pay guaranteed salary during sickness?"),
-    ("Country without any documents (German customer)", "muller",
-     "How long do we pay guaranteed salary during sickness?"),
-    ("Outdated 2024 procedure (double holiday pay)", "janssens",
+    ("Janssens NV · Outdated 2024 double holiday pay", "janssens",
      "How much double holiday pay do white-collar employees get?"),
-    ("No source exists at all (bicycle allowance)", "janssens", "Can employees get a bicycle allowance?"),
+    ("Janssens NV · White-collar sickness guaranteed salary", "janssens",
+     "How long do we pay guaranteed salary during sickness?"),
+    ("Janssens NV · No source exists: bicycle allowance", "janssens", "Can employees get a bicycle allowance?"),
+    ("Bouwbedrijf Maes · Belgian bonus rule, but customer is PC 124", "maes", HERO_QUESTION),
+    ("Bouwbedrijf Maes · Who pays the year-end premium (sector fund)", "maes",
+     "Who pays the year-end premium for construction workers?"),
+    ("Bouwbedrijf Maes · Mobility allowance per site (HIGH)", "maes",
+     "How is the mobility allowance for construction workers calculated?"),
+    ("Bouwbedrijf Maes · Bad-weather unemployment (stale, reported incomplete)", "maes",
+     "How do we declare temporary unemployment due to bad weather?"),
+    ("Bouwbedrijf Maes · Blue-collar sickness guaranteed salary", "maes",
+     "How long do we pay guaranteed salary during sickness?"),
+    ("Brasserie De Kaai · Flexi-job next to a main job (HIGH)", "de-kaai",
+     "Can a flexi-job be combined with a main job at another employer?"),
+    ("Brasserie De Kaai · Student hours: 2026 rule vs 2027 announcement vs chat", "de-kaai",
+     "How many hours can a student work with reduced contributions?"),
+    ("Brasserie De Kaai · Tips: 2024 note, owner left", "de-kaai", "How are tips and service charge declared?"),
+    ("Zorggroep Oost · ORT for night shifts (new version after 2 reports)", "zorggroep-oost",
+     "What irregular hours allowance (ORT) applies to night shifts?"),
+    ("Zorggroep Oost · Sick pay during long absence (NL, 104 weeks)", "zorggroep-oost",
+     "How long does the employer pay salary during sickness?"),
+    ("Zorggroep Oost · Asked in Dutch: onregelmatigheidstoeslag", "zorggroep-oost",
+     "Wat is de onregelmatigheidstoeslag voor nachtdiensten?"),
+    ("Müller GmbH · German customer, no German sources", "muller",
+     "How long do we pay guaranteed salary during sickness?"),
 ]
 CATEGORY = {"white_collar": "White-collar", "blue_collar": "Blue-collar", None: "Any category"}
 REPORT_REASONS = ["wrong_context", "outdated", "contradicts_other_source", "incorrect", "incomplete", "unclear"]
@@ -228,6 +251,9 @@ def login_page():
                               {"Username": "eva-smit", "Role": "Owner (NL)", "Use for": "Publishing the Dutch fix"},
                               {"Username": "an-peeters", "Role": "Owner (BE)", "Use for": "Belgian documents"},
                               {"Username": "mark-de-vries", "Role": "Expert (NL)", "Use for": "Confirming answers"},
+                              {"Username": "sarah-dubois", "Role": "Expert (BE)", "Use for": "Belgian verdicts"},
+                              {"Username": "lotte-wouters", "Role": "Owner (BE social law)", "Use for": "Hospitality, students"},
+                              {"Username": "bram-janssen", "Role": "Owner (NL healthcare)", "Use for": "CAO VVT"},
                               {"Username": "admin", "Role": "Admin", "Use for": "Reset, audit"},
                               {"Username": "joost-bakker", "Role": "Left the company", "Use for": "Login is refused"}],
                              hide_index=True, width="stretch")
@@ -265,8 +291,12 @@ with st.sidebar:
     customer_id = st.selectbox("Customer", list(customers), key="customer_sel",
                                format_func=lambda c: f"{customers[c]['name']} ({customers[c]['country']})")
     c = customers[customer_id]
-    st.caption(f"Country {c['country']} · Joint committee {c['cla'] or 'n/a'} · "
-               f"{CATEGORY[c['employee_category']]} · {c['employees']} employees")
+    issues = "".join(f"<li>{esc(i)}</li>" for i in c.get("known_issues", []))
+    show(f"""<div class='tc-context' style='font-size:12px;line-height:1.5'>
+         <b>{esc(c.get('sector', ''))}</b> · {c['employees']} employees<br>
+         Country {esc(c['country'])} · {esc(c['cla'] or 'no joint committee / CAO')} · {esc(CATEGORY[c['employee_category']])}<br>
+         <span style='color:var(--muted)'>{esc(c.get('profile', ''))}</span>
+         <div style='margin-top:6px'><b>Known questions</b><ul style='margin:2px 0 0 16px;padding:0'>{issues}</ul></div></div>""")
     st.divider()
     st.caption(f"Trust policy v{service.trust.POLICY_VERSION} · rule-based · all data synthetic")
     if DEMO_MODE or people[user_id]["role"] == "admin":

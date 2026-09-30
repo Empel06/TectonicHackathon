@@ -34,5 +34,23 @@
   "person_id": "admin",
   "salt": "013b188801f1103117cb891d03387dec",
   "hash": "9fb45b71b684311b96e61d835c9822ab46c130101e44bdbcc2eaa30339f43e14"
+ },
+ {
+  "username": "lotte-wouters",
+  "person_id": "lotte-wouters",
+  "salt": "f25ff7e3732845c8933d492e0ab1672f",
+  "hash": "90ffdfd0cd733d78da1372740bd34f4902340e8390e91f36597f323408d0c3fd"
+ },
+ {
+  "username": "bram-janssen",
+  "person_id": "bram-janssen",
+  "salt": "b4f543f415c057dc46304da4d3250f41",
+  "hash": "b3c79ad3c66bab3c90d24f7594c7e9f4d2754f50adcb0b2065e9c041b1d5a04c"
+ },
+ {
+  "username": "sarah-dubois",
+  "person_id": "sarah-dubois",
+  "salt": "c9c0da535d5145122acbddfac88e03ef",
+  "hash": "fa469e3fa1b5b87b33149d0c71b6634595eca38508009edcce18fa54c44efef9"
  }
 ]

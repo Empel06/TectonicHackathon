@@ -130,3 +130,31 @@ def test_owner_text_replaces_the_staged_draft_as_the_same_version():
     r = ask("van-dijk", HERO)
     assert r["sources"][0]["doc_version_id"] == "nl-13th-month@v2"
     assert r["answer"].startswith("Owner's own summary.")
+
+
+@pytest.mark.parametrize("customer, question, level, top", [
+    ("janssens", "Do we give meal vouchers for sick days?", "HIGH", "be-meal-vouchers@v1"),
+    ("maes", "How is the mobility allowance for construction workers calculated?", "HIGH", "be-mobility-construction@v1"),
+    ("de-kaai", "Can a flexi-job be combined with a main job at another employer?", "HIGH", "be-flexi-jobs@v1"),
+    ("de-kaai", "How many hours can a student work with reduced contributions?", "MEDIUM", "be-student-work@v1"),
+    ("de-kaai", "How are tips and service charge declared?", "LOW", "be-horeca-tips@v1"),
+    ("maes", "How do we declare temporary unemployment due to bad weather?", "LOW", "be-bad-weather@v1"),
+    ("zorggroep-oost", "What irregular hours allowance (ORT) applies to night shifts?", "MEDIUM", "nl-cao-vvt-ort@v2"),
+    ("zorggroep-oost", "Wat is de onregelmatigheidstoeslag voor nachtdiensten?", "MEDIUM", "nl-cao-vvt-ort@v2"),
+    ("zorggroep-oost", "How long does the employer pay salary during sickness?", "HIGH", "nl-sickness-104-weeks@v1"),
+    ("van-dijk", "What minimum youth wage applies to an 18-year-old?", "MEDIUM", "nl-minimum-youth-wage@v1"),
+])
+def test_demo_company_cases(customer, question, level, top):
+    r = ask(customer, question)
+    assert (r["confidence"], r["sources"][0]["doc_version_id"]) == (level, top)
+
+
+def test_announced_rule_does_not_contradict_the_current_one():
+    r = ask("de-kaai", "How many hours can a student work with reduced contributions?")
+    assert r["signals"]["consistency"]["status"] == "pass"
+    assert r["sources"][0]["doc_version_id"] == "be-student-work@v1"  # the 2027 rule is ranked lower
+
+
+def test_old_version_is_superseded_in_knowledge_base():
+    kb = {row["doc_version_id"]: row["status"] for row in service.knowledge_base()}
+    assert kb["nl-cao-vvt-ort@v1"] == "Superseded" and kb["nl-cao-vvt-ort@v2"] == "Live"

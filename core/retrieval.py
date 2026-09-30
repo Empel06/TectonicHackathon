@@ -28,6 +28,18 @@ SYNONYMS = {
     "bouwsector": "construction", "bouw": "construction", "construction": "construction",
     "pro rata": "pro-rata", "prorata": "pro-rata", "au prorata": "pro-rata",
     "december": "december", "décembre": "december",
+    "maaltijdcheques": "meal vouchers", "maaltijdcheque": "meal voucher", "chèques-repas": "meal vouchers",
+    "ecocheques": "eco-cheques", "éco-chèques": "eco-cheques",
+    "mobiliteitsvergoeding": "mobility allowance", "slecht weer": "bad weather", "intempéries": "bad weather",
+    "tijdelijke werkloosheid": "temporary unemployment", "chômage temporaire": "temporary unemployment",
+    "flexijob": "flexi-job", "flexi-jobs": "flexi-job", "hoofdjob": "main job",
+    "jobstudent": "student work", "studentenarbeid": "student work", "studentenuren": "student hours",
+    "job étudiant": "student work", "étudiant": "student",
+    "minimumjeugdloon": "minimum youth wage", "jeugdloon": "youth wage", "minimumloon": "minimum wage",
+    "loondoorbetaling bij ziekte": "continued salary payment during sickness", "loondoorbetaling": "continued salary payment",
+    "onregelmatigheidstoeslag": "irregular hours allowance ort", "ort": "irregular hours allowance ort",
+    "nachtdienst": "night", "weekenddienst": "weekend", "feestdag": "public holiday",
+    "fooien": "tips", "fooi": "tips", "pourboires": "tips",
 }
 _SYNONYM_RE = re.compile("|".join(re.escape(k) for k in sorted(SYNONYMS, key=len, reverse=True)))
 
